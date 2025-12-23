@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background rounded rectangle (app shape) -->
+  <rect x="8" y="4" width="48" height="56" rx="8" ry="8" fill="#3B82F6"/>
+  
+  <!-- Inner screen area -->
+  <rect x="12" y="8" width="40" height="48" rx="4" ry="4" fill="#1E3A5F"/>
+  
+  <!-- Stream/Play icon - stylized arrow with motion lines -->
+  <path d="M26 22L42 32L26 42V22Z" fill="#60A5FA"/>
+  
+  <!-- Motion/stream lines -->
+  <rect x="18" y="26" width="4" height="2" rx="1" fill="#60A5FA" opacity="0.6"/>
+  <rect x="16" y="31" width="6" height="2" rx="1" fill="#60A5FA" opacity="0.8"/>
+  <rect x="18" y="36" width="4" height="2" rx="1" fill="#60A5FA" opacity="0.6"/>
+  
+  <!-- Top notch (modern phone style) -->
+  <rect x="24" y="10" width="16" height="3" rx="1.5" fill="#0F172A"/>
+</svg>
+
