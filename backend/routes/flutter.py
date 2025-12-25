@@ -107,3 +107,62 @@ def get_logs():
         return jsonify(logs)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/clean', methods=['POST'])
+def clean_project():
+    """Run flutter clean on a project."""
+    try:
+        service = get_flutter_run_service()
+        data = request.json or {}
+        project_id = data.get('project_id')
+        
+        if not project_id:
+            return jsonify({"error": "Project ID is required"}), 400
+        
+        result = service.clean_project(project_id)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/project-info', methods=['GET'])
+def get_project_info():
+    """Get detailed information about a Flutter project."""
+    try:
+        service = get_flutter_run_service()
+        project_id = request.args.get('project_id')
+        
+        if not project_id:
+            return jsonify({"error": "Project ID is required"}), 400
+        
+        info = service.get_project_info(project_id)
+        return jsonify(info)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/clean-batch', methods=['POST'])
+def clean_projects_batch():
+    """Run flutter clean on multiple projects."""
+    try:
+        service = get_flutter_run_service()
+        data = request.json or {}
+        project_ids = data.get('project_ids', [])
+        
+        if not project_ids or not isinstance(project_ids, list):
+            return jsonify({"error": "project_ids array is required"}), 400
+        
+        if len(project_ids) == 0:
+            return jsonify({"error": "At least one project ID is required"}), 400
+        
+        results = service.clean_projects(project_ids)
+        return jsonify({"results": results})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

@@ -303,6 +303,45 @@ export async function getFlutterLogs(): Promise<LogEntry[]> {
   return handleResponse<LogEntry[]>(response)
 }
 
+// Flutter Clean
+export async function flutterClean(projectId: string): Promise<{ status: string; message: string; output?: string }> {
+  const response = await fetch(`${API_BASE_URL}/flutter/clean`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ project_id: projectId }),
+  })
+  return handleResponse<{ status: string; message: string; output?: string }>(response)
+}
+
+// Flutter Clean Batch (multiple projects)
+export interface CleanBatchResult {
+  project_id: string
+  project_name: string
+  status: 'success' | 'error'
+  message: string
+}
+
+export async function flutterCleanBatch(projectIds: string[]): Promise<{ results: CleanBatchResult[] }> {
+  const response = await fetch(`${API_BASE_URL}/flutter/clean-batch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ project_ids: projectIds }),
+  })
+  return handleResponse<{ results: CleanBatchResult[] }>(response)
+}
+
+// Flutter Project Info
+import type { ProjectInfo } from '@/types'
+
+export async function getProjectInfo(projectId: string): Promise<ProjectInfo> {
+  const response = await fetch(`${API_BASE_URL}/flutter/project-info?project_id=${projectId}`)
+  return handleResponse<ProjectInfo>(response)
+}
+
 // Directory Browser API
 export interface DirectoryEntry {
   name: string

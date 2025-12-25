@@ -3,8 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useToast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Navbar } from './navbar'
+import { ProjectToolbar } from '@/components/project-toolbar'
 import { ProjectList } from '@/components/project-list'
 import { ProjectForm } from '@/components/project-form'
+import { ProjectInfoDialog } from '@/components/project-info-dialog'
 import { AppList } from '@/components/app-list'
 import { AppForm } from '@/components/app-form'
 import { BuildConsole, WelcomeMessage } from '@/components/build-console'
@@ -44,6 +46,13 @@ export function AppLayout() {
     const [projectPlatforms, setProjectPlatforms] = useState<Platform[]>([])
 
     const [activeTab, setActiveTab] = useState<ConsoleTab>('build')
+
+    // Multi-select state for projects
+    const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set())
+
+    // Project info dialog state
+    const [projectInfoOpen, setProjectInfoOpen] = useState(false)
+    const [projectForInfo, setProjectForInfo] = useState<Project | null>(null)
 
     useSocket()
 
@@ -99,6 +108,17 @@ export function AppLayout() {
         },
         [selectedProject, navigate]
     )
+
+    // Clear multi-select when navigating to a project
+    const handleClearSelection = useCallback(() => {
+        setSelectedProjectIds(new Set())
+    }, [])
+
+    // Show project info dialog
+    const handleShowProjectInfo = useCallback((project: Project) => {
+        setProjectForInfo(project)
+        setProjectInfoOpen(true)
+    }, [])
 
     // Project handlers
     const handleAddProject = useCallback(() => {
@@ -278,6 +298,14 @@ export function AppLayout() {
         <SidebarProvider>
             <div className="h-screen flex flex-col overflow-hidden bg-background">
                 <Navbar isDark={isDark} onToggleTheme={toggleTheme} />
+                
+                {/* Project Toolbar - Shows when project is selected or multi-select mode */}
+                <ProjectToolbar 
+                    project={selectedProject} 
+                    selectedProjectIds={selectedProjectIds}
+                    projects={projects}
+                    onClearSelection={handleClearSelection}
+                />
 
                 {/* Main Content - Flex Layout with Sidebar */}
                 <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -287,11 +315,14 @@ export function AppLayout() {
                         <ProjectList
                             projects={projects}
                             selectedProject={selectedProject}
+                            selectedProjectIds={selectedProjectIds}
                             isLoading={isLoadingProjects}
                             onSelectProject={handleSelectProject}
                             onAddProject={handleAddProject}
                             onRemoveProject={handleRemoveProject}
                             onDeleteProject={handleDeleteProject}
+                            onSelectionChange={setSelectedProjectIds}
+                            onShowInfo={handleShowProjectInfo}
                         />
 
                         {/* Apps Section - Only shown when project is selected */}
@@ -379,6 +410,15 @@ export function AppLayout() {
                     variant="destructive"
                     onConfirm={confirmDeleteApp}
                 />
+
+                {/* Project Info Dialog */}
+                {projectForInfo && (
+                    <ProjectInfoDialog
+                        open={projectInfoOpen}
+                        onOpenChange={setProjectInfoOpen}
+                        project={projectForInfo}
+                    />
+                )}
             </div>
         </SidebarProvider>
     )

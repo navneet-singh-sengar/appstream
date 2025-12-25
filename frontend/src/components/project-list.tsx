@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FolderOpen, Plus, Trash2, GitBranch, X } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { FolderOpen, Plus, Trash2, GitBranch, Check, Info, MoreVertical, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -9,6 +9,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   useSidebar,
   SidebarSection,
@@ -20,24 +26,56 @@ import type { Project } from '@/types'
 interface ProjectListProps {
   projects: Project[]
   selectedProject: Project | null
+  selectedProjectIds: Set<string>
   isLoading: boolean
   onSelectProject: (project: Project) => void
   onAddProject: () => void
   onRemoveProject: (project: Project) => void
   onDeleteProject: (project: Project) => void
+  onSelectionChange: (selectedIds: Set<string>) => void
+  onShowInfo: (project: Project) => void
 }
 
 export function ProjectList({
   projects,
   selectedProject,
+  selectedProjectIds,
   isLoading,
   onSelectProject,
   onAddProject,
   onRemoveProject,
   onDeleteProject,
+  onSelectionChange,
+  onShowInfo,
 }: ProjectListProps) {
   const { isCollapsed } = useSidebar()
   const [hoveredProject, setHoveredProject] = useState<string | null>(null)
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
+
+  const isSelectionMode = selectedProjectIds.size > 0
+
+  const handleCheckboxChange = useCallback((project: Project, index: number, shiftKey: boolean) => {
+    const newSelection = new Set(selectedProjectIds)
+
+    if (shiftKey && lastClickedIndex !== null) {
+      // Range selection
+      const start = Math.min(lastClickedIndex, index)
+      const end = Math.max(lastClickedIndex, index)
+      for (let i = start; i <= end; i++) {
+        newSelection.add(projects[i].id)
+      }
+    } else {
+      // Toggle single selection
+      if (newSelection.has(project.id)) {
+        newSelection.delete(project.id)
+      } else {
+        newSelection.add(project.id)
+      }
+    }
+
+    setLastClickedIndex(index)
+    onSelectionChange(newSelection)
+  }, [selectedProjectIds, lastClickedIndex, projects, onSelectionChange])
 
   return (
     <SidebarSection>
@@ -65,18 +103,23 @@ export function ProjectList({
           <EmptyState isCollapsed={isCollapsed} onAddProject={onAddProject} />
         ) : (
           <div className="space-y-0.5">
-            {projects.map((project) => (
+            {projects.map((project, index) => (
               <ProjectItem
                 key={project.id}
                 project={project}
+                index={index}
                 isSelected={selectedProject?.id === project.id}
+                isChecked={selectedProjectIds.has(project.id)}
                 isHovered={hoveredProject === project.id}
                 isCollapsed={isCollapsed}
+                isSelectionMode={isSelectionMode}
                 onClick={() => onSelectProject(project)}
                 onMouseEnter={() => setHoveredProject(project.id)}
                 onMouseLeave={() => setHoveredProject(null)}
                 onRemove={() => onRemoveProject(project)}
                 onDelete={() => onDeleteProject(project)}
+                onShowInfo={() => onShowInfo(project)}
+                onCheckboxChange={(shiftKey) => handleCheckboxChange(project, index, shiftKey)}
               />
             ))}
           </div>
@@ -127,28 +170,38 @@ function EmptyState({ isCollapsed, onAddProject }: EmptyStateProps) {
 
 interface ProjectItemProps {
   project: Project
+  index: number
   isSelected: boolean
+  isChecked: boolean
   isHovered: boolean
   isCollapsed: boolean
+  isSelectionMode: boolean
   onClick: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
   onRemove: () => void
   onDelete: () => void
+  onShowInfo: () => void
+  onCheckboxChange: (shiftKey: boolean) => void
 }
 
 function ProjectItem({
   project,
   isSelected,
+  isChecked,
   isHovered,
   isCollapsed,
+  isSelectionMode,
   onClick,
   onMouseEnter,
   onMouseLeave,
   onRemove,
   onDelete,
+  onShowInfo,
+  onCheckboxChange,
 }: ProjectItemProps) {
   const initial = project.name.charAt(0).toUpperCase()
+  const showCheckbox = isSelectionMode || isHovered
 
   if (isCollapsed) {
     return (
@@ -186,49 +239,75 @@ function ProjectItem({
   }
 
   return (
-    <button
+    <div
       className={cn(
-        'w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-left group',
+        'w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-left group',
         isSelected
           ? 'bg-accent text-accent-foreground'
           : 'hover:bg-muted/50'
       )}
-      onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        // Context menu handled by dropdown
+      }}
     >
-      {/* Avatar */}
-      <span
+      {/* Checkbox */}
+      <button
         className={cn(
-          'w-7 h-7 rounded-md flex items-center justify-center text-xs font-medium shrink-0',
-          isSelected
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-muted text-muted-foreground'
+          'w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all',
+          isChecked
+            ? 'bg-primary border-primary text-primary-foreground'
+            : 'border-muted-foreground/30 hover:border-primary',
+          !showCheckbox && 'opacity-0'
         )}
+        onClick={(e) => {
+          e.stopPropagation()
+          onCheckboxChange(e.shiftKey)
+        }}
       >
-        {initial}
-      </span>
+        {isChecked && <Check className="h-3 w-3" />}
+      </button>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium truncate">{project.name}</p>
-          {project.is_cloned && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-500 font-medium">
-              <GitBranch className="h-3 w-3" />
-              Cloned
-            </span>
+      {/* Clickable area for navigation */}
+      <button
+        className="flex-1 flex items-center gap-2.5 min-w-0"
+        onClick={onClick}
+      >
+        {/* Avatar */}
+        <span
+          className={cn(
+            'w-7 h-7 rounded-md flex items-center justify-center text-xs font-medium shrink-0',
+            isSelected
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
           )}
+        >
+          {initial}
+        </span>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0 text-left">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium truncate">{project.name}</p>
+            {project.is_cloned && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-500 font-medium">
+                <GitBranch className="h-3 w-3" />
+                Cloned
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground truncate">
+            {getShortPath(project.path)}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground truncate">
-          {getShortPath(project.path)}
-        </p>
-      </div>
+      </button>
 
-      {/* Action buttons */}
-      {isHovered && (
+      {/* Action buttons - Info and More menu */}
+      {isHovered && !isSelectionMode && (
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100">
-          {/* Remove button - removes from list only */}
+          {/* Info button */}
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -238,42 +317,44 @@ function ProjectItem({
                   className="h-6 w-6"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onRemove()
+                    onShowInfo()
                   }}
                 >
-                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                  <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
-                Remove from list
+                Project info
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
 
-          {/* Delete button - deletes folder from disk */}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete()
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                Delete from disk
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          {/* More menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onRemove}>
+                <X className="h-4 w-4 mr-2" />
+                Remove
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
-    </button>
+    </div>
   )
 }
 

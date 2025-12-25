@@ -197,3 +197,30 @@ export interface StepType {
   category: string
   configFields: StepConfigField[]
 }
+
+// Project Info types
+export interface PubspecInfo {
+  name: string
+  version: string
+  description: string
+  dependencies_count: number
+  dev_dependencies_count: number
+}
+
+export interface SdkVersions {
+  flutter: string
+  dart: string
+  channel: string
+}
+
+export interface ProjectStats {
+  dart_files: number
+  total_lines: number
+}
+
+export interface ProjectInfo {
+  pubspec: PubspecInfo | null
+  sdk_versions: SdkVersions
+  platforms: Platform[]
+  stats: ProjectStats
+}

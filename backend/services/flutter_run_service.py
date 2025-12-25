@@ -515,3 +515,185 @@ class FlutterRunService:
     def get_logs(self):
         """Get all logs."""
         return self.logs
+    
+    def clean_project(self, project_id):
+        """Run flutter clean on a project.
+        
+        Args:
+            project_id: The project ID to clean
+            
+        Returns:
+            dict with status and message
+        """
+        project_root = self._get_project_root(project_id)
+        
+        try:
+            result = subprocess.run(
+                ["flutter", "clean"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minute timeout
+            )
+            
+            if result.returncode == 0:
+                return {
+                    "status": "success",
+                    "message": "Flutter clean completed successfully",
+                    "output": result.stdout
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "Flutter clean failed",
+                    "output": result.stderr or result.stdout
+                }
+        except subprocess.TimeoutExpired:
+            raise ValueError("Flutter clean timed out")
+        except Exception as e:
+            raise ValueError(f"Flutter clean failed: {e}")
+    
+    def clean_projects(self, project_ids):
+        """Run flutter clean on multiple projects.
+        
+        Args:
+            project_ids: List of project IDs to clean
+            
+        Returns:
+            List of results with project_id, status, and message for each
+        """
+        results = []
+        
+        for project_id in project_ids:
+            try:
+                # Get project name for better reporting
+                project_service = self._get_project_service()
+                project = project_service.get(project_id)
+                project_name = project.get('name', project_id) if project else project_id
+                
+                result = self.clean_project(project_id)
+                results.append({
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "status": result.get("status", "error"),
+                    "message": result.get("message", "Unknown error"),
+                })
+            except Exception as e:
+                results.append({
+                    "project_id": project_id,
+                    "project_name": project_id,
+                    "status": "error",
+                    "message": str(e),
+                })
+        
+        return results
+    
+    def get_project_info(self, project_id):
+        """Get detailed information about a Flutter project.
+        
+        Args:
+            project_id: The project ID
+            
+        Returns:
+            dict with pubspec info, SDK versions, platforms, and stats
+        """
+        project_root = self._get_project_root(project_id)
+        
+        info = {
+            "pubspec": self._get_pubspec_info(project_root),
+            "sdk_versions": self._get_sdk_versions(project_root),
+            "platforms": list(self._get_project_platforms(project_id)),
+            "stats": self._get_project_stats(project_root),
+        }
+        
+        return info
+    
+    def _get_pubspec_info(self, project_root):
+        """Parse pubspec.yaml and extract key information."""
+        pubspec_path = project_root / "pubspec.yaml"
+        
+        if not pubspec_path.exists():
+            return None
+        
+        try:
+            import yaml
+            with open(pubspec_path, 'r') as f:
+                pubspec = yaml.safe_load(f)
+            
+            dependencies = pubspec.get('dependencies', {})
+            dev_dependencies = pubspec.get('dev_dependencies', {})
+            
+            # Remove flutter SDK dependency from count
+            dep_count = len([k for k in dependencies.keys() if k != 'flutter'])
+            dev_dep_count = len(dev_dependencies)
+            
+            return {
+                "name": pubspec.get('name', 'Unknown'),
+                "version": pubspec.get('version', '0.0.0'),
+                "description": pubspec.get('description', ''),
+                "dependencies_count": dep_count,
+                "dev_dependencies_count": dev_dep_count,
+            }
+        except Exception as e:
+            print(f"Error parsing pubspec.yaml: {e}")
+            return None
+    
+    def _get_sdk_versions(self, project_root):
+        """Get Flutter and Dart SDK versions."""
+        try:
+            result = subprocess.run(
+                ["flutter", "--version", "--machine"],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                version_info = json.loads(result.stdout)
+                return {
+                    "flutter": version_info.get('frameworkVersion', 'Unknown'),
+                    "dart": version_info.get('dartSdkVersion', 'Unknown').split(' ')[0],
+                    "channel": version_info.get('channel', 'Unknown'),
+                }
+        except Exception as e:
+            print(f"Error getting SDK versions: {e}")
+        
+        return {
+            "flutter": "Unknown",
+            "dart": "Unknown",
+            "channel": "Unknown",
+        }
+    
+    def _get_project_stats(self, project_root):
+        """Get project statistics (file counts, lines of code)."""
+        stats = {
+            "dart_files": 0,
+            "total_lines": 0,
+        }
+        
+        try:
+            lib_dir = project_root / "lib"
+            if lib_dir.exists():
+                for dart_file in lib_dir.rglob("*.dart"):
+                    stats["dart_files"] += 1
+                    try:
+                        with open(dart_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            stats["total_lines"] += sum(1 for _ in f)
+                    except Exception:
+                        pass
+            
+            # Also count test files
+            test_dir = project_root / "test"
+            if test_dir.exists():
+                for dart_file in test_dir.rglob("*.dart"):
+                    stats["dart_files"] += 1
+                    try:
+                        with open(dart_file, 'r', encoding='utf-8', errors='ignore') as f:
+                            stats["total_lines"] += sum(1 for _ in f)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Error getting project stats: {e}")
+        
+        return stats
