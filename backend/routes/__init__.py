@@ -10,6 +10,7 @@ from .build import bp as build_bp
 from .flutter import bp as flutter_bp
 from .browse import bp as browse_bp
 from .main import bp as main_bp
+from .steps import bp as steps_bp
 
 
 def register_blueprints(app):
@@ -20,6 +21,7 @@ def register_blueprints(app):
     app.register_blueprint(build_bp, url_prefix='/api/build')
     app.register_blueprint(flutter_bp, url_prefix='/api/flutter')
     app.register_blueprint(browse_bp, url_prefix='/api/browse')
+    app.register_blueprint(steps_bp, url_prefix='/api/steps')
 
 
 __all__ = ['register_blueprints']

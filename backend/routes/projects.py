@@ -91,13 +91,22 @@ def update_project(project_id):
 
 @bp.route('/<project_id>', methods=['DELETE'])
 def delete_project(project_id):
-    """Delete a project."""
+    """Delete a project.
+    
+    Query Parameters:
+        delete_folder: If 'true', also delete the project folder from disk.
+                      For cloned projects, the folder is always deleted.
+    """
     service = get_project_service()
     
-    if not service.delete(project_id):
+    # Check if we should delete the project folder
+    delete_folder = request.args.get('delete_folder', 'false').lower() == 'true'
+    
+    if not service.delete(project_id, delete_project_folder=delete_folder):
         return jsonify({"error": "Project not found"}), 404
     
-    return jsonify({"message": "Project deleted successfully"})
+    message = "Project deleted successfully" if delete_folder else "Project removed from workspace"
+    return jsonify({"message": message})
 
 
 @bp.route('/<project_id>/platforms', methods=['GET'])

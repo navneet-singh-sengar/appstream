@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
     Play,
     Square,
@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { Console, copyLogsToClipboard } from '@/components/ui/console'
 import { useFlutterRun } from '@/hooks/use-flutter-run'
+import type { RunMode } from '@/types'
 
 interface FlutterRunPanelProps {
     socketConnected: boolean
@@ -38,6 +39,7 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
         clearLogs,
     } = useFlutterRun()
 
+    const [runMode, setRunMode] = useState<RunMode>('debug')
     const panelRef = useRef<HTMLDivElement>(null)
 
     // Keyboard shortcuts
@@ -70,6 +72,10 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
 
     const handleCopy = () => copyLogsToClipboard(logs)
 
+    const handleStart = () => {
+        start(runMode)
+    }
+
     // Determine connection status for console indicator
     const connectionStatus = socketConnected ? 'connected' : 'connecting'
 
@@ -78,7 +84,7 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
             <CardContent className="flex-1 flex flex-col overflow-hidden gap-4 pt-4">
                 {/* Controls Row */}
                 <div className="flex flex-wrap gap-3 items-center justify-between">
-                    {/* Device Selector */}
+                    {/* Device Selector and Run Mode */}
                     <div className="flex items-center gap-2">
                         <Smartphone className="h-4 w-4 text-muted-foreground" />
                         <Select
@@ -108,6 +114,18 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
                                 className={cn('h-4 w-4', isLoadingDevices && 'animate-spin')}
                             />
                         </Button>
+
+                        {/* Run Mode Selector */}
+                        <Select
+                            value={runMode}
+                            onChange={(e) => setRunMode(e.target.value as RunMode)}
+                            disabled={isRunning}
+                            className="w-24"
+                        >
+                            <option value="debug">Debug</option>
+                            <option value="profile">Profile</option>
+                            <option value="release">Release</option>
+                        </Select>
                     </div>
 
                     {/* Run Controls with Status Badge */}
@@ -116,7 +134,7 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
 
                         {!isRunning ? (
                             <Button
-                                onClick={start}
+                                onClick={handleStart}
                                 disabled={!selectedDevice || isStarting || !socketConnected}
                                 size="sm"
                                 className="gap-1.5"
@@ -166,7 +184,7 @@ export function FlutterRunPanel({ socketConnected }: FlutterRunPanelProps) {
                 {/* Error Alert - Only show when there's an error or running */}
                 <RunStatusAlert isRunning={isRunning} error={error} deviceName={
                     devices.find((d) => d.id === selectedDevice)?.name || selectedDevice
-                } />
+                } runMode={runMode} />
 
                 {/* Console with Connection Indicator */}
                 <Console
@@ -205,9 +223,10 @@ interface RunStatusAlertProps {
     isRunning: boolean
     error: string | null
     deviceName: string | null
+    runMode: RunMode
 }
 
-function RunStatusAlert({ isRunning, error, deviceName }: RunStatusAlertProps) {
+function RunStatusAlert({ isRunning, error, deviceName, runMode }: RunStatusAlertProps) {
     if (error) {
         return (
             <Alert variant="destructive">
@@ -217,11 +236,12 @@ function RunStatusAlert({ isRunning, error, deviceName }: RunStatusAlertProps) {
     }
 
     if (isRunning) {
+        const modeLabel = runMode.charAt(0).toUpperCase() + runMode.slice(1)
         return (
             <Alert>
                 <div className="flex items-center gap-2 text-green-600">
                     <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    Running on {deviceName || 'device'}
+                    Running on {deviceName || 'device'} ({modeLabel} mode)
                 </div>
             </Alert>
         )

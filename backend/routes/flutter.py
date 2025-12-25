@@ -30,6 +30,7 @@ def start_run():
         device_id = data.get('device')
         project_id = data.get('project_id')
         app_id = data.get('app_id')  # Optional: for run settings
+        run_mode = data.get('run_mode', 'debug')  # debug, profile, or release
         
         if not device_id:
             return jsonify({"error": "Device ID is required"}), 400
@@ -37,7 +38,11 @@ def start_run():
         if not project_id:
             return jsonify({"error": "Project ID is required"}), 400
         
-        result = service.start(device_id, project_id, app_id)
+        # Validate run_mode
+        if run_mode not in ('debug', 'profile', 'release'):
+            run_mode = 'debug'
+        
+        result = service.start(device_id, project_id, app_id, run_mode)
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

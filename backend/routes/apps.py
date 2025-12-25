@@ -24,20 +24,38 @@ def create():
     try:
         service = get_app_service()
         
-        app_name = request.form.get('appName', '').strip()
-        package_id = request.form.get('packageId', '').strip()
-        platforms_json = request.form.get('platforms', '["android"]')
-        logo_url = request.form.get('logoUrl', '').strip()
+        # Handle JSON request
+        if request.content_type and 'application/json' in request.content_type:
+            data = request.json
+            app_name = data.get('appName', '').strip()
+            package_id = data.get('packageId', '').strip()
+            platforms = data.get('platforms', ['android'])
+            logo_url = data.get('logoUrl', '').strip() if data.get('logoUrl') else None
+            build_settings = data.get('buildSettings')
+        else:
+            # Legacy FormData support
+            app_name = request.form.get('appName', '').strip()
+            package_id = request.form.get('packageId', '').strip()
+            platforms_json = request.form.get('platforms', '["android"]')
+            logo_url = request.form.get('logoUrl', '').strip() or None
+            
+            try:
+                platforms = json.loads(platforms_json)
+                if not platforms:
+                    platforms = ['android']
+            except json.JSONDecodeError:
+                platforms = ['android']
+            
+            build_settings_json = request.form.get('buildSettings')
+            build_settings = None
+            if build_settings_json:
+                try:
+                    build_settings = json.loads(build_settings_json)
+                except json.JSONDecodeError:
+                    pass
         
         if not app_name or not package_id:
             return jsonify({'error': 'App name and package ID are required'}), 400
-        
-        try:
-            platforms = json.loads(platforms_json)
-            if not platforms:
-                platforms = ['android']
-        except json.JSONDecodeError:
-            platforms = ['android']
         
         app_data = {
             'appName': app_name,
@@ -45,30 +63,13 @@ def create():
             'platforms': platforms
         }
         
-        # Add logo URL if provided
         if logo_url:
             app_data['logoUrl'] = logo_url
-            
-        # Parse build settings
-        build_settings_json = request.form.get('buildSettings')
-        if build_settings_json:
-            try:
-                build_settings = json.loads(build_settings_json)
-                app_data['buildSettings'] = build_settings
-            except json.JSONDecodeError:
-                pass
+        
+        if build_settings:
+            app_data['buildSettings'] = build_settings
         
         app_id = service.add(app_data)
-        
-        # Handle Android app icon upload
-        if 'androidAppIcon' in request.files:
-            file = request.files['androidAppIcon']
-            if file and file.filename:
-                app_dir = service.get_app_dir(app_id)
-                if app_dir:
-                    icon_dir = app_dir / "android" / "app_icon"
-                    icon_dir.mkdir(parents=True, exist_ok=True)
-                    file.save(icon_dir / "res.zip")
         
         return jsonify({'id': app_id, 'message': 'App added successfully'}), 201
         
@@ -94,11 +95,11 @@ def update(app_id):
     try:
         service = get_app_service()
         
-        # Handle both JSON and FormData
+        # Handle JSON request
         if request.content_type and 'application/json' in request.content_type:
             app_data = request.json
         else:
-            # Parse FormData
+            # Legacy FormData support
             app_data = {}
             
             if request.form.get('appName'):
@@ -108,7 +109,6 @@ def update(app_id):
             if request.form.get('logoUrl'):
                 app_data['logoUrl'] = request.form.get('logoUrl', '').strip()
             
-            # Parse platforms from JSON string
             platforms_str = request.form.get('platforms')
             if platforms_str:
                 try:
@@ -116,7 +116,6 @@ def update(app_id):
                 except json.JSONDecodeError:
                     pass
             
-            # Parse build settings from JSON string
             build_settings_str = request.form.get('buildSettings')
             if build_settings_str:
                 try:
@@ -126,16 +125,6 @@ def update(app_id):
         
         if not service.update(app_id, app_data):
             return jsonify({"error": "App not found"}), 404
-        
-        # Handle Android app icon upload
-        if 'androidAppIcon' in request.files:
-            file = request.files['androidAppIcon']
-            if file and file.filename:
-                app_dir = service.get_app_dir(app_id)
-                if app_dir:
-                    icon_dir = app_dir / "android" / "app_icon"
-                    icon_dir.mkdir(parents=True, exist_ok=True)
-                    file.save(icon_dir / "res.zip")
         
         return jsonify({"message": "App updated successfully"})
     except Exception as e:
@@ -161,7 +150,7 @@ def check_assets(app_id):
         if not app_dir or not app_dir.exists():
             return jsonify({"error": "App not found"}), 404
         
-        # Check for res.zip
+        # Check for res.zip (still used by Android Setup step)
         res_zip_path = app_dir / "android" / "app_icon" / "res.zip"
         has_res_zip = res_zip_path.exists()
         
@@ -175,7 +164,7 @@ def check_assets(app_id):
 
 @bp.route('/<app_id>/assets', methods=['POST'])
 def upload_assets(app_id):
-    """Upload assets for an app."""
+    """Upload assets for an app (e.g., res.zip for Android icons)."""
     try:
         if 'files' not in request.files:
             return jsonify({"error": "No files provided"}), 400
@@ -189,10 +178,11 @@ def upload_assets(app_id):
         uploaded_files = []
         for file in request.files.getlist('files'):
             if file.filename:
-                if file.filename.lower().endswith('.zip') and 'res.zip' in file.filename.lower():
+                # Handle res.zip for Android app icons
+                if file.filename.lower().endswith('.zip') and 'res' in file.filename.lower():
                     upload_dir = app_dir / "android" / "app_icon"
                     upload_dir.mkdir(parents=True, exist_ok=True)
-                    file_path = upload_dir / file.filename
+                    file_path = upload_dir / "res.zip"
                     file.save(file_path)
                     uploaded_files.append(str(file_path))
         
@@ -202,4 +192,3 @@ def upload_assets(app_id):
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-

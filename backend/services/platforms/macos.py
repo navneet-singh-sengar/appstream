@@ -42,7 +42,12 @@ class MacOSHandler(PlatformHandler):
     
     def get_build_command(self, build_type: str, output_type: str) -> list:
         """Return the Flutter build command for macOS."""
-        mode_flag = "--release" if build_type == "release" else "--debug"
+        mode_flags = {
+            "release": "--release",
+            "debug": "--debug",
+            "profile": "--profile",
+        }
+        mode_flag = mode_flags.get(build_type, "--release")
         return ["flutter", "build", "macos", mode_flag]
     
     def find_build_output(self, build_type: str, output_type: str) -> Path:

@@ -6,7 +6,6 @@ and build handling to the appropriate platform handlers.
 """
 
 import os
-import shlex
 import shutil
 import subprocess
 import uuid
@@ -14,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .platforms import get_handler
+from .workflows.workflow_executor import WorkflowExecutor
 
 
 class BuildService:
@@ -51,6 +51,10 @@ class BuildService:
     def _get_build_history_service(self):
         """Get build history service from app context."""
         return self.app.extensions['build_history_service']
+    
+    def _get_workflow_executor(self):
+        """Get workflow executor from app context."""
+        return self.app.extensions['workflow_executor']
     
     def _get_project_root(self, project_id):
         """Get the Flutter project root path for a project."""
@@ -106,20 +110,66 @@ class BuildService:
             handler = get_handler(platform, project_root, apps_dir, self._log)
             handler.set_build_id(build_id)
             
-            # Step 1: Platform-specific setup
-            self._log(build_id, f"Step 1: Setting up {platform} configuration...", "info")
-            handler.setup(app_id, app_config)
-            
-            # Step 2: Run Flutter build
-            self._log(build_id, f"Step 2: Building {platform} {output_type}...", "info")
+            # Get platform-specific build settings
             platform_settings = app_config.get('buildSettings', {}).get(platform, {})
             build_settings = platform_settings.get('build', {})
             
+            # Get workflow steps
+            workflow_config = build_settings.get('workflow', {})
+            pre_steps = workflow_config.get('preSteps', [])
+            post_steps = workflow_config.get('postSteps', [])
+            
+            # Build context for workflow steps
+            workflow_context = {
+                "project_id": project_id,
+                "project_root": str(project_root),
+                "apps_dir": apps_dir,  # For Android setup step to find res.zip
+                "app_id": app_id,
+                "app_config": app_config,
+                "build_id": build_id,
+                "platform": platform,
+                "build_type": build_type,
+                "output_type": output_type,
+            }
+            
+            # Step 1: Execute pre-build workflow steps and collect custom args
+            custom_args = []
+            if pre_steps:
+                self._log(build_id, f"Step 1: Running {len(pre_steps)} pre-build step(s)...", "info")
+                workflow_executor = self._get_workflow_executor()
+                
+                def workflow_log_fn(message, level):
+                    self._log(build_id, message, level)
+                
+                success, results = workflow_executor.execute_steps(
+                    pre_steps, workflow_context, workflow_log_fn
+                )
+                
+                if not success:
+                    raise Exception("Pre-build workflow steps failed")
+                
+                # Extract custom args from custom_args steps
+                custom_args = self._extract_custom_args(pre_steps, results)
+                if custom_args:
+                    self._log(build_id, f"Collected {len(custom_args)} custom argument(s) from workflow", "info")
+                
+                self._log(build_id, "Pre-build steps completed", "success")
+            
+            # Step 2: Platform-specific setup
+            step_num = 2 if pre_steps else 1
+            self._log(build_id, f"Step {step_num}: Setting up {platform} configuration...", "info")
+            handler.setup(app_id, app_config)
+            
+            # Step 3: Run Flutter build
+            step_num += 1
+            self._log(build_id, f"Step {step_num}: Building {platform} {output_type}...", "info")
+            
             output_path = self._run_flutter_build(
-                handler, build_type, output_type, build_id, project_root, build_settings
+                handler, build_type, output_type, build_id, project_root, custom_args
             )
             
-            # Step 3: Move output to final location
+            # Step 4: Move output to final location
+            step_num += 1
             ext = handler.get_output_extension(output_type)
             output_filename = (
                 f"{app_config['appName'].replace(' ', '_')}_{platform}_{build_type}_"
@@ -127,6 +177,28 @@ class BuildService:
             )
             final_output_path = self._build_output_dir / output_filename
             shutil.move(output_path, final_output_path)
+            
+            # Update context with build output info for post-build steps
+            workflow_context["output_path"] = str(final_output_path)
+            workflow_context["output_filename"] = output_filename
+            
+            # Step 5: Execute post-build workflow steps
+            if post_steps:
+                step_num += 1
+                self._log(build_id, f"Step {step_num}: Running {len(post_steps)} post-build step(s)...", "info")
+                workflow_executor = self._get_workflow_executor()
+                
+                def workflow_log_fn(message, level):
+                    self._log(build_id, message, level)
+                
+                success, results = workflow_executor.execute_steps(
+                    post_steps, workflow_context, workflow_log_fn
+                )
+                
+                if not success:
+                    self._log(build_id, "Warning: Some post-build steps failed", "warning")
+                else:
+                    self._log(build_id, "Post-build steps completed", "success")
             
             self._log(build_id, "Build completed successfully!", "success")
             
@@ -223,7 +295,7 @@ class BuildService:
         except Exception as e:
             print(f"Failed to emit log via WebSocket: {e}")
     
-    def _run_flutter_build(self, handler, build_type, output_type, build_id, project_root, build_settings=None):
+    def _run_flutter_build(self, handler, build_type, output_type, build_id, project_root, custom_args=None):
         """
         Run Flutter build command using the platform handler.
         
@@ -233,13 +305,13 @@ class BuildService:
             output_type: Output format
             build_id: Current build ID for logging
             project_root: Path to project root
-            build_settings: Optional build settings (args, dartDefines)
+            custom_args: Optional list of custom arguments from workflow steps
             
         Returns:
             Path to the build output
         """
-        if build_settings is None:
-            build_settings = {}
+        if custom_args is None:
+            custom_args = []
         
         try:
             os.chdir(project_root)
@@ -253,35 +325,9 @@ class BuildService:
             # Build command from handler
             build_command = handler.get_build_command(build_type, output_type)
             
-            # Inject custom arguments and dart defines
-            if build_settings:
-                custom_args = build_settings.get('args', [])
-                # Handle both array and legacy string format
-                if isinstance(custom_args, str):
-                    custom_args = custom_args.strip()
-                    if custom_args:
-                        try:
-                            build_command.extend(shlex.split(custom_args))
-                        except Exception as e:
-                            self._log(build_id, f"Failed to parse custom args: {e}", "warning")
-                elif isinstance(custom_args, list):
-                    for arg in custom_args:
-                        if arg and arg.strip():
-                            build_command.append(arg.strip())
-                
-                dart_defines = build_settings.get('dartDefines', [])
-                # Handle both array and legacy string format
-                if isinstance(dart_defines, str):
-                    dart_defines = dart_defines.strip()
-                    if dart_defines:
-                        for define in dart_defines.split('\n'):
-                            define = define.strip()
-                            if define:
-                                build_command.append(f"--dart-define={define}")
-                elif isinstance(dart_defines, list):
-                    for define in dart_defines:
-                        if define and define.strip():
-                            build_command.append(f"--dart-define={define.strip()}")
+            # Append custom arguments from workflow steps
+            if custom_args:
+                build_command.extend(custom_args)
             
             # Run build command
             self._log(build_id, f"Running command: {' '.join(build_command)}", "info")
@@ -350,3 +396,27 @@ class BuildService:
         self.current_build_id = None
         self.current_process = None
         self._build_start_time = None
+    
+    def _extract_custom_args(self, steps, results):
+        """
+        Extract custom arguments from workflow step results.
+        
+        Args:
+            steps: List of workflow step configurations
+            results: List of step execution results
+            
+        Returns:
+            List of custom arguments to append to the flutter command
+        """
+        from .workflows.steps.custom_args_step import CustomArgsStep
+        
+        custom_args = []
+        
+        for i, step in enumerate(steps):
+            if step.get('type') == 'custom_args':
+                # Get arguments from step config
+                step_config = step.get('config', {})
+                args = CustomArgsStep.extract_arguments_from_config(step_config)
+                custom_args.extend(args)
+        
+        return custom_args

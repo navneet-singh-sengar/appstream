@@ -12,6 +12,7 @@ import type {
   Platform,
   BuildType,
   BuildOutputType,
+  StepType,
 } from '@/types'
 
 export const API_BASE_URL = '/api'
@@ -72,12 +73,18 @@ export async function updateProject(
   return handleResponse<{ message: string }>(response)
 }
 
-export async function deleteProject(projectId: string): Promise<{ message: string }> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+export async function deleteProject(projectId: string, deleteFolder: boolean = false): Promise<{ message: string }> {
+  const params = deleteFolder ? '?delete_folder=true' : ''
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}${params}`, {
     method: 'DELETE',
   })
 
   return handleResponse<{ message: string }>(response)
+}
+
+// Convenience function: Remove project from workspace (keeps folder on disk)
+export async function removeProject(projectId: string): Promise<{ message: string }> {
+  return deleteProject(projectId, false)
 }
 
 export async function cloneProject(data: {
@@ -118,28 +125,18 @@ export async function fetchApp(appId: string): Promise<App> {
 }
 
 export async function createApp(projectId: string, data: AppFormData): Promise<{ id: string; message: string }> {
-  const formData = new FormData()
-  formData.append('appName', data.appName.trim())
-  formData.append('packageId', data.packageId.trim())
-  formData.append('platforms', JSON.stringify(data.platforms))
-
-  if (data.buildSettings) {
-    formData.append('buildSettings', JSON.stringify(data.buildSettings))
-  }
-
-  // Add logo URL if provided
-  if (data.logoUrl) {
-    formData.append('logoUrl', data.logoUrl)
-  }
-
-  // Add Android app icon if provided
-  if (data.androidAppIcon) {
-    formData.append('androidAppIcon', data.androidAppIcon)
-  }
-
   const response = await fetch(`${API_BASE_URL}/projects/${projectId}/apps`, {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      appName: data.appName.trim(),
+      packageId: data.packageId.trim(),
+      platforms: data.platforms,
+      logoUrl: data.logoUrl,
+      buildSettings: data.buildSettings,
+    }),
   })
 
   return handleResponse<{ id: string; message: string }>(response)
@@ -147,59 +144,17 @@ export async function createApp(projectId: string, data: AppFormData): Promise<{
 
 export async function updateApp(
   appId: string,
-  data: Partial<App> & { androidAppIcon?: File }
+  data: Partial<App>
 ): Promise<{ message: string }> {
-  // Use FormData if file is included, otherwise use JSON
-  if (data.androidAppIcon) {
-    const formData = new FormData()
-
-    if (data.appName) {
-      formData.append('appName', data.appName.trim())
-    }
-    if (data.packageId) {
-      formData.append('packageId', data.packageId.trim())
-    }
-    if (data.platforms) {
-      formData.append('platforms', JSON.stringify(data.platforms))
-    }
-    if (data.logoUrl) {
-      formData.append('logoUrl', data.logoUrl)
-    }
-    if (data.buildSettings) {
-      formData.append('buildSettings', JSON.stringify(data.buildSettings))
-    }
-    formData.append('androidAppIcon', data.androidAppIcon)
-
-    const response = await fetch(`${API_BASE_URL}/apps/${appId}`, {
-      method: 'PUT',
-      body: formData,
-    })
-
-    return handleResponse<{ message: string }>(response)
-  }
-
-  // Use JSON for updates without file
-  const { androidAppIcon: _, ...jsonData } = data
   const response = await fetch(`${API_BASE_URL}/apps/${appId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(jsonData),
+    body: JSON.stringify(data),
   })
 
   return handleResponse<{ message: string }>(response)
-}
-
-// Check app assets (res.zip)
-export interface AppAssets {
-  hasResZip: boolean
-  resZipPath: string | null
-}
-
-export async function checkAppAssets(appId: string): Promise<AppAssets> {
-  const response = await fetch(`${API_BASE_URL}/apps/${appId}/assets`)
-  return handleResponse<AppAssets>(response)
 }
 
 export async function deleteApp(appId: string): Promise<{ message: string }> {
@@ -295,14 +250,20 @@ export async function getFlutterDevices(projectId?: string): Promise<FlutterDevi
 export async function startFlutterRun(
   deviceId: string,
   projectId: string,
-  appId?: string
+  appId?: string,
+  runMode: 'debug' | 'profile' | 'release' = 'debug'
 ): Promise<{ status: string; device: string; project_id: string }> {
   const response = await fetch(`${API_BASE_URL}/flutter/run`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ device: deviceId, project_id: projectId, app_id: appId }),
+    body: JSON.stringify({
+      device: deviceId,
+      project_id: projectId,
+      app_id: appId,
+      run_mode: runMode,
+    }),
   })
 
   return handleResponse<{ status: string; device: string; project_id: string }>(response)
@@ -413,4 +374,10 @@ export interface SystemInfo {
 export async function getSystemInfo(): Promise<SystemInfo> {
   const response = await fetch(`${API_BASE_URL}/system-info`)
   return handleResponse<SystemInfo>(response)
+}
+
+// Steps API - Get available workflow step types
+export async function fetchAvailableSteps(): Promise<StepType[]> {
+  const response = await fetch(`${API_BASE_URL}/steps`)
+  return handleResponse<StepType[]>(response)
 }

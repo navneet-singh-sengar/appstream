@@ -3,7 +3,6 @@ FlutterRunService - Manages Flutter run process for live development.
 """
 
 import json
-import shlex
 import subprocess
 import threading
 from datetime import datetime
@@ -69,6 +68,10 @@ class FlutterRunService:
     def _get_app_service(self):
         """Get app service from app context."""
         return self.app.extensions['app_service']
+    
+    def _get_workflow_executor(self):
+        """Get workflow executor from app context."""
+        return self.app.extensions['workflow_executor']
     
     def _get_project_root(self, project_id):
         """Get the Flutter project root path for a project."""
@@ -167,13 +170,31 @@ class FlutterRunService:
             print(f"Error getting devices: {e}")
             return []
     
-    def start(self, device_id, project_id, app_id=None):
+    def _log_to_console(self, message, level="info"):
+        """Log message to console and emit via websocket."""
+        timestamp = datetime.now().isoformat()
+        log_entry = {
+            "timestamp": timestamp,
+            "message": message,
+            "level": level
+        }
+        self.logs.append(log_entry)
+        print(f"[{timestamp}] {level.upper()}: {message}")
+        
+        try:
+            socketio = self._get_socketio()
+            socketio.emit('run_log', {'log_entry': log_entry})
+        except Exception as e:
+            print(f"Failed to emit log: {e}")
+    
+    def start(self, device_id, project_id, app_id=None, run_mode='debug'):
         """Start Flutter run on specified device for a project.
         
         Args:
             device_id: The device ID to run on
             project_id: The project ID
             app_id: Optional app ID to get run settings from
+            run_mode: Run mode - 'debug', 'profile', or 'release' (default: 'debug')
         """
         if self.is_running:
             raise ValueError("Flutter is already running")
@@ -189,41 +210,77 @@ class FlutterRunService:
         self.is_running = True
         
         try:
-            cmd = ["flutter", "run", "-d", device_id]
+            # Build command with run mode flag
+            mode_flags = {
+                'debug': '--debug',
+                'profile': '--profile',
+                'release': '--release',
+            }
+            mode_flag = mode_flags.get(run_mode, '--debug')
+            cmd = ["flutter", "run", "-d", device_id, mode_flag]
+            
+            run_settings = None
+            device_platform = None
+            custom_args = []
             
             # Get run settings from app if provided
             if app_id:
                 run_settings = self._get_run_settings(app_id, device_id)
-                if run_settings:
-                    # Add custom args - handle both array and legacy string format
-                    custom_args = run_settings.get('args', [])
-                    if isinstance(custom_args, str):
-                        custom_args = custom_args.strip()
-                        if custom_args:
-                            try:
-                                cmd.extend(shlex.split(custom_args))
-                            except Exception as e:
-                                print(f"Failed to parse custom run args: {e}")
-                    elif isinstance(custom_args, list):
-                        for arg in custom_args:
-                            if arg and arg.strip():
-                                cmd.append(arg.strip())
+                
+                # Get device platform for workflow context
+                devices = self.get_devices()
+                for d in devices:
+                    if d.get('id') == device_id:
+                        device_platform = d.get('platform_type')
+                        break
+            
+            # Execute pre-run workflow steps and collect custom args
+            if run_settings:
+                workflow_config = run_settings.get('workflow', {})
+                pre_steps = workflow_config.get('preSteps', [])
+                
+                if pre_steps:
+                    self._log_to_console(f"Running {len(pre_steps)} pre-run step(s)...", "info")
                     
-                    # Add dart defines - handle both array and legacy string format
-                    dart_defines = run_settings.get('dartDefines', [])
-                    if isinstance(dart_defines, str):
-                        dart_defines = dart_defines.strip()
-                        if dart_defines:
-                            for define in dart_defines.split('\n'):
-                                define = define.strip()
-                                if define:
-                                    cmd.append(f"--dart-define={define}")
-                    elif isinstance(dart_defines, list):
-                        for define in dart_defines:
-                            if define and define.strip():
-                                cmd.append(f"--dart-define={define.strip()}")
+                    # Get app config for context
+                    app_service = self._get_app_service()
+                    app_config = app_service.get(app_id) if app_id else {}
+                    
+                    # Build workflow context
+                    workflow_context = {
+                        "project_id": project_id,
+                        "project_root": str(project_root),
+                        "app_id": app_id,
+                        "app_config": app_config,
+                        "device_id": device_id,
+                        "platform": device_platform,
+                        "run_mode": run_mode,
+                    }
+                    
+                    workflow_executor = self._get_workflow_executor()
+                    success, results = workflow_executor.execute_steps(
+                        pre_steps, workflow_context, self._log_to_console
+                    )
+                    
+                    if not success:
+                        self.is_running = False
+                        self.device = None
+                        self.project_id = None
+                        raise Exception("Pre-run workflow steps failed")
+                    
+                    # Extract custom args from custom_args steps
+                    custom_args = self._extract_custom_args(pre_steps, results)
+                    if custom_args:
+                        self._log_to_console(f"Collected {len(custom_args)} custom argument(s) from workflow", "info")
+                    
+                    self._log_to_console("Pre-run steps completed", "success")
+            
+            # Append custom arguments from workflow steps
+            if custom_args:
+                cmd.extend(custom_args)
             
             # Log the command being run
+            self._log_to_console(f"Starting Flutter run in {run_mode} mode...", "info")
             print(f"Running command: {' '.join(cmd)}")
             
             self.process = subprocess.Popen(
@@ -235,6 +292,11 @@ class FlutterRunService:
                 bufsize=1,
                 cwd=project_root
             )
+            
+            # Store run settings for post-run steps
+            self._current_run_settings = run_settings
+            self._current_app_id = app_id
+            self._current_device_platform = device_platform
             
             self._log_thread = threading.Thread(target=self._stream_logs, daemon=True)
             self._log_thread.start()
@@ -254,7 +316,7 @@ class FlutterRunService:
             device_id: The device ID to determine platform
             
         Returns:
-            Run settings dict with 'args' and 'dartDefines', or None
+            Run settings dict with 'workflow', or None
         """
         try:
             app_service = self._get_app_service()
@@ -286,6 +348,30 @@ class FlutterRunService:
         except Exception as e:
             print(f"Error getting run settings: {e}")
             return None
+    
+    def _extract_custom_args(self, steps, results):
+        """
+        Extract custom arguments from workflow step results.
+        
+        Args:
+            steps: List of workflow step configurations
+            results: List of step execution results
+            
+        Returns:
+            List of custom arguments to append to the flutter command
+        """
+        from .workflows.steps.custom_args_step import CustomArgsStep
+        
+        custom_args = []
+        
+        for i, step in enumerate(steps):
+            if step.get('type') == 'custom_args':
+                # Get arguments from step config
+                step_config = step.get('config', {})
+                args = CustomArgsStep.extract_arguments_from_config(step_config)
+                custom_args.extend(args)
+        
+        return custom_args
     
     def _stream_logs(self):
         """Stream logs from Flutter process."""
@@ -346,9 +432,52 @@ class FlutterRunService:
             print(f"Error stopping flutter: {e}")
             self.process.kill()
         
+        # Execute post-run workflow steps
+        run_settings = getattr(self, '_current_run_settings', None)
+        if run_settings:
+            workflow_config = run_settings.get('workflow', {})
+            post_steps = workflow_config.get('postSteps', [])
+            
+            if post_steps:
+                self._log_to_console(f"Running {len(post_steps)} post-run step(s)...", "info")
+                
+                try:
+                    # Get app config for context
+                    app_id = getattr(self, '_current_app_id', None)
+                    app_service = self._get_app_service()
+                    app_config = app_service.get(app_id) if app_id else {}
+                    
+                    # Build workflow context
+                    project_root = self._get_project_root(self.project_id) if self.project_id else None
+                    workflow_context = {
+                        "project_id": self.project_id,
+                        "project_root": str(project_root) if project_root else None,
+                        "app_id": app_id,
+                        "app_config": app_config,
+                        "device_id": self.device,
+                        "platform": getattr(self, '_current_device_platform', None),
+                    }
+                    
+                    workflow_executor = self._get_workflow_executor()
+                    success, results = workflow_executor.execute_steps(
+                        post_steps, workflow_context, self._log_to_console
+                    )
+                    
+                    if success:
+                        self._log_to_console("Post-run steps completed", "success")
+                    else:
+                        self._log_to_console("Warning: Some post-run steps failed", "warning")
+                except Exception as e:
+                    self._log_to_console(f"Error running post-run steps: {e}", "error")
+        
+        # Clean up state
         self.is_running = False
         self.device = None
         self.project_id = None
+        self._current_run_settings = None
+        self._current_app_id = None
+        self._current_device_platform = None
+        
         return {"status": "stopped"}
     
     def hot_reload(self):

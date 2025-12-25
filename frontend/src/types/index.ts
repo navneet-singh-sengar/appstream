@@ -51,10 +51,23 @@ export const PLATFORM_OUTPUT_TYPES: Record<Platform, { value: BuildOutputType; l
   linux: [{ value: 'executable', label: 'Executable' }],
 }
 
-// Platform-specific settings for args and dart-defines
+// Workflow step for pre/post build/run hooks
+export interface WorkflowStep {
+  id: string
+  type: string
+  name?: string
+  config: Record<string, unknown>
+}
+
+// Workflow configuration with pre and post steps
+export interface WorkflowConfig {
+  preSteps: WorkflowStep[]
+  postSteps: WorkflowStep[]
+}
+
+// Platform-specific settings (workflow only - args are now in custom_args step)
 export interface PlatformSettings {
-  args: string[]
-  dartDefines: string[]
+  workflow?: WorkflowConfig
 }
 
 // Build settings containing separate build and run configurations
@@ -81,7 +94,6 @@ export interface AppFormData {
   packageId: string
   platforms: Platform[]
   logoUrl?: string
-  androidAppIcon?: File
   buildSettings?: Partial<Record<Platform, BuildSettings>>
 }
 
@@ -93,7 +105,10 @@ export interface LogEntry {
 }
 
 // Build types
-export type BuildType = 'release' | 'debug'
+export type BuildType = 'release' | 'debug' | 'profile'
+
+// Run mode types (for flutter run)
+export type RunMode = 'debug' | 'profile' | 'release'
 
 export interface BuildResult {
   build_id: string
@@ -152,4 +167,33 @@ export interface BuildHistoryRecord {
   error_message?: string
   duration?: number
   file_exists?: boolean
+}
+
+// Step types for workflow configuration
+export type StepFieldType = 'string' | 'number' | 'boolean' | 'select' | 'multiselect' | 'textarea' | 'file'
+
+export interface StepConfigFieldOption {
+  value: string
+  label: string
+}
+
+export interface StepConfigField {
+  name: string
+  label: string
+  type: StepFieldType
+  required: boolean
+  default?: unknown
+  description: string
+  options: StepConfigFieldOption[]
+  placeholder: string
+  accept?: string  // For file type: accepted file extensions (e.g., ".zip")
+}
+
+export interface StepType {
+  type: string
+  displayName: string
+  description: string
+  icon: string
+  category: string
+  configFields: StepConfigField[]
 }

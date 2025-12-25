@@ -18,8 +18,10 @@ import { useBuild } from '@/hooks/use-build'
 import { useSocket } from '@/hooks/use-socket'
 import { useTheme } from '@/hooks/use-theme'
 import { useStore } from '@/store'
-import { getProjectPlatforms } from '@/services/api'
+import { getProjectPlatforms, deleteProject as apiDeleteProject } from '@/services/api'
 import type { Project, ProjectFormData, App, AppFormData, Platform, BuildType, BuildOutputType } from '@/types'
+
+type ProjectAction = 'remove' | 'delete'
 
 export function AppLayout() {
     const { projectId, appId } = useParams<{ projectId?: string; appId?: string }>()
@@ -30,8 +32,9 @@ export function AppLayout() {
     // Project form state
     const [projectFormOpen, setProjectFormOpen] = useState(false)
     const [projectFormMode, setProjectFormMode] = useState<'add' | 'edit'>('add')
-    const [deleteProjectDialogOpen, setDeleteProjectDialogOpen] = useState(false)
-    const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+    const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+    const [projectToAction, setProjectToAction] = useState<Project | null>(null)
+    const [projectAction, setProjectAction] = useState<ProjectAction>('remove')
 
     // App form state
     const [appFormOpen, setAppFormOpen] = useState(false)
@@ -49,7 +52,7 @@ export function AppLayout() {
         selectedProject,
         isLoadingProjects,
         createProject,
-        deleteProject,
+        loadProjects,
         selectProjectById,
     } = useProjects()
 
@@ -103,23 +106,39 @@ export function AppLayout() {
         setProjectFormOpen(true)
     }, [])
 
-    const handleDeleteProject = useCallback((project: Project) => {
-        setProjectToDelete(project)
-        setDeleteProjectDialogOpen(true)
+    // Remove project from list (keeps folder on disk)
+    const handleRemoveProject = useCallback((project: Project) => {
+        setProjectToAction(project)
+        setProjectAction('remove')
+        setProjectDialogOpen(true)
     }, [])
 
-    const confirmDeleteProject = useCallback(async () => {
-        if (!projectToDelete) return
+    // Delete project (removes folder from disk)
+    const handleDeleteProject = useCallback((project: Project) => {
+        setProjectToAction(project)
+        setProjectAction('delete')
+        setProjectDialogOpen(true)
+    }, [])
+
+    const confirmProjectAction = useCallback(async () => {
+        if (!projectToAction) return
 
         try {
-            await deleteProject(projectToDelete.id)
+            const deleteFolder = projectAction === 'delete'
+            await apiDeleteProject(projectToAction.id, deleteFolder)
+            await loadProjects()
             navigate('/')
-            addToast('Project deleted successfully', 'success')
+            
+            if (deleteFolder) {
+                addToast('Project deleted from disk', 'success')
+            } else {
+                addToast('Project removed from workspace', 'success')
+            }
         } catch {
-            addToast('Failed to delete project', 'error')
+            addToast(`Failed to ${projectAction} project`, 'error')
         }
-        setProjectToDelete(null)
-    }, [projectToDelete, deleteProject, navigate, addToast])
+        setProjectToAction(null)
+    }, [projectToAction, projectAction, loadProjects, navigate, addToast])
 
     const handleProjectFormSubmit = useCallback(
         async (data: ProjectFormData) => {
@@ -195,7 +214,6 @@ export function AppLayout() {
                         platforms: data.platforms,
                         logoUrl: data.logoUrl,
                         buildSettings: data.buildSettings,
-                        androidAppIcon: data.androidAppIcon,
                     })
                     addToast('App updated successfully!', 'success')
                 }
@@ -232,16 +250,29 @@ export function AppLayout() {
         }
     }, [stopBuild, addToast])
 
-    // const handleDownload = useCallback(
-    //     async (filename: string) => {
-    //         try {
-    //             await downloadOutput(filename)
-    //         } catch {
-    //             addToast('Failed to download file', 'error')
-    //         }
-    //     },
-    //     [downloadOutput, addToast]
-    // )
+    // Get dialog content based on action
+    const getProjectDialogContent = () => {
+        if (!projectToAction) return { title: '', description: '', confirmLabel: '', requireConfirmation: undefined }
+
+        if (projectAction === 'delete') {
+            return {
+                title: 'Delete Project',
+                description: `Are you sure you want to permanently delete "${projectToAction.name}"? This will delete the project folder from your disk and remove all app configurations. This action cannot be undone.`,
+                confirmLabel: 'Delete',
+                requireConfirmation: 'DELETE',
+            }
+        }
+
+        // Remove action
+        return {
+            title: 'Remove Project',
+            description: `Remove "${projectToAction.name}" from your workspace? The project folder will remain on your disk, but the app configurations for this project will be deleted.`,
+            confirmLabel: 'Remove',
+            requireConfirmation: undefined,
+        }
+    }
+
+    const dialogContent = getProjectDialogContent()
 
     return (
         <SidebarProvider>
@@ -259,6 +290,7 @@ export function AppLayout() {
                             isLoading={isLoadingProjects}
                             onSelectProject={handleSelectProject}
                             onAddProject={handleAddProject}
+                            onRemoveProject={handleRemoveProject}
                             onDeleteProject={handleDeleteProject}
                         />
 
@@ -323,20 +355,17 @@ export function AppLayout() {
                     defaultPlatforms={projectPlatforms}
                 />
 
-                {/* Delete Project Confirmation Dialog */}
+                {/* Project Remove/Delete Confirmation Dialog */}
                 <ConfirmDialog
-                    open={deleteProjectDialogOpen}
-                    onOpenChange={setDeleteProjectDialogOpen}
-                    title={projectToDelete?.is_cloned ? "Delete Cloned Project" : "Remove Project"}
-                    description={
-                        projectToDelete?.is_cloned
-                            ? `Are you sure you want to delete "${projectToDelete?.name}"? This will permanently delete the downloaded project folder and remove it from your workspace. This action cannot be undone.`
-                            : `Are you sure you want to remove "${projectToDelete?.name}" from your workspace? The project folder will remain on your disk, but the app configurations for this project will be deleted.`
-                    }
-                    confirmLabel={projectToDelete?.is_cloned ? "Delete" : "Remove"}
+                    open={projectDialogOpen}
+                    onOpenChange={setProjectDialogOpen}
+                    title={dialogContent.title}
+                    description={dialogContent.description}
+                    confirmLabel={dialogContent.confirmLabel}
                     cancelLabel="Cancel"
                     variant="destructive"
-                    onConfirm={confirmDeleteProject}
+                    onConfirm={confirmProjectAction}
+                    requireConfirmation={dialogContent.requireConfirmation}
                 />
 
                 {/* Delete App Confirmation Dialog */}

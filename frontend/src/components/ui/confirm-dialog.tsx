@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import {
     Dialog,
@@ -9,6 +9,8 @@ import {
     DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface ConfirmDialogProps {
     open: boolean
@@ -19,6 +21,8 @@ interface ConfirmDialogProps {
     cancelLabel?: string
     variant?: 'default' | 'destructive'
     onConfirm: () => void | Promise<void>
+    /** If set, user must type this exact text to enable the confirm button */
+    requireConfirmation?: string
 }
 
 export function ConfirmDialog({
@@ -30,10 +34,23 @@ export function ConfirmDialog({
     cancelLabel = 'Cancel',
     variant = 'default',
     onConfirm,
+    requireConfirmation,
 }: ConfirmDialogProps) {
     const [isLoading, setIsLoading] = useState(false)
+    const [confirmationInput, setConfirmationInput] = useState('')
+
+    // Reset confirmation input when dialog opens/closes
+    useEffect(() => {
+        if (!open) {
+            setConfirmationInput('')
+        }
+    }, [open])
+
+    const isConfirmationValid = !requireConfirmation || confirmationInput === requireConfirmation
 
     const handleConfirm = async () => {
+        if (!isConfirmationValid) return
+        
         setIsLoading(true)
         try {
             await onConfirm()
@@ -43,8 +60,15 @@ export function ConfirmDialog({
         }
     }
 
+    const handleOpenChange = (newOpen: boolean) => {
+        if (!newOpen) {
+            setConfirmationInput('')
+        }
+        onOpenChange(newOpen)
+    }
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
@@ -55,14 +79,30 @@ export function ConfirmDialog({
                     </DialogTitle>
                 </DialogHeader>
 
-                <DialogBody>
+                <DialogBody className="space-y-4">
                     <p className="text-muted-foreground">{description}</p>
+                    
+                    {requireConfirmation && (
+                        <div className="space-y-2">
+                            <Label htmlFor="confirmation-input" className="text-sm font-medium">
+                                Type <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-destructive">{requireConfirmation}</span> to confirm
+                            </Label>
+                            <Input
+                                id="confirmation-input"
+                                value={confirmationInput}
+                                onChange={(e) => setConfirmationInput(e.target.value)}
+                                placeholder={requireConfirmation}
+                                className={confirmationInput && !isConfirmationValid ? 'border-destructive' : ''}
+                                autoComplete="off"
+                            />
+                        </div>
+                    )}
                 </DialogBody>
 
                 <DialogFooter>
                     <Button
                         variant="outline"
-                        onClick={() => onOpenChange(false)}
+                        onClick={() => handleOpenChange(false)}
                         disabled={isLoading}
                     >
                         {cancelLabel}
@@ -70,7 +110,7 @@ export function ConfirmDialog({
                     <Button
                         variant={variant === 'destructive' ? 'destructive' : 'default'}
                         onClick={handleConfirm}
-                        disabled={isLoading}
+                        disabled={isLoading || !isConfirmationValid}
                     >
                         {isLoading ? (
                             <>
@@ -96,6 +136,7 @@ export function useConfirmDialog() {
         confirmLabel: string
         variant: 'default' | 'destructive'
         onConfirm: () => void | Promise<void>
+        requireConfirmation?: string
     }>({
         open: false,
         title: 'Confirm',
@@ -103,6 +144,7 @@ export function useConfirmDialog() {
         confirmLabel: 'Confirm',
         variant: 'default',
         onConfirm: () => { },
+        requireConfirmation: undefined,
     })
 
     const confirm = useCallback(
@@ -111,6 +153,7 @@ export function useConfirmDialog() {
             description: string
             confirmLabel?: string
             variant?: 'default' | 'destructive'
+            requireConfirmation?: string
         }): Promise<boolean> => {
             return new Promise((resolve) => {
                 setState({
@@ -119,6 +162,7 @@ export function useConfirmDialog() {
                     description: options.description,
                     confirmLabel: options.confirmLabel || 'Confirm',
                     variant: options.variant || 'default',
+                    requireConfirmation: options.requireConfirmation,
                     onConfirm: () => resolve(true),
                 })
             })
@@ -138,6 +182,7 @@ export function useConfirmDialog() {
         confirmLabel: state.confirmLabel,
         variant: state.variant,
         onConfirm: state.onConfirm,
+        requireConfirmation: state.requireConfirmation,
     }
 
     return { confirm, dialogProps, ConfirmDialog }

@@ -10,6 +10,7 @@ from .app_service import AppService
 from .build_service import BuildService
 from .flutter_run_service import FlutterRunService
 from .build_history_service import BuildHistoryService
+from .workflows import WorkflowExecutor
 
 __all__ = [
     'ProjectService',
@@ -17,6 +18,7 @@ __all__ = [
     'BuildService',
     'FlutterRunService',
     'BuildHistoryService',
+    'WorkflowExecutor',
 ]
 
 
@@ -28,6 +30,7 @@ def init_services(app):
     app.build_service_class = BuildService
     app.flutter_run_service_class = FlutterRunService
     app.build_history_service_class = BuildHistoryService
+    app.workflow_executor_class = WorkflowExecutor
     
     # Store singleton instances
     app.extensions['project_service'] = ProjectService(app)
@@ -35,6 +38,7 @@ def init_services(app):
     app.extensions['build_service'] = BuildService(app)
     app.extensions['flutter_run_service'] = FlutterRunService(app)
     app.extensions['build_history_service'] = BuildHistoryService(app)
+    app.extensions['workflow_executor'] = WorkflowExecutor(app)
 
 
 def get_project_service():
@@ -65,3 +69,9 @@ def get_build_history_service():
     """Get the build history service from current app context."""
     from flask import current_app
     return current_app.extensions['build_history_service']
+
+
+def get_workflow_executor():
+    """Get the workflow executor from current app context."""
+    from flask import current_app
+    return current_app.extensions['workflow_executor']

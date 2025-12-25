@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderOpen, Plus, Trash2, GitBranch } from 'lucide-react'
+import { FolderOpen, Plus, Trash2, GitBranch, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -23,6 +23,7 @@ interface ProjectListProps {
   isLoading: boolean
   onSelectProject: (project: Project) => void
   onAddProject: () => void
+  onRemoveProject: (project: Project) => void
   onDeleteProject: (project: Project) => void
 }
 
@@ -32,6 +33,7 @@ export function ProjectList({
   isLoading,
   onSelectProject,
   onAddProject,
+  onRemoveProject,
   onDeleteProject,
 }: ProjectListProps) {
   const { isCollapsed } = useSidebar()
@@ -73,6 +75,7 @@ export function ProjectList({
                 onClick={() => onSelectProject(project)}
                 onMouseEnter={() => setHoveredProject(project.id)}
                 onMouseLeave={() => setHoveredProject(null)}
+                onRemove={() => onRemoveProject(project)}
                 onDelete={() => onDeleteProject(project)}
               />
             ))}
@@ -130,6 +133,7 @@ interface ProjectItemProps {
   onClick: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
+  onRemove: () => void
   onDelete: () => void
 }
 
@@ -141,6 +145,7 @@ function ProjectItem({
   onClick,
   onMouseEnter,
   onMouseLeave,
+  onRemove,
   onDelete,
 }: ProjectItemProps) {
   const initial = project.name.charAt(0).toUpperCase()
@@ -220,19 +225,53 @@ function ProjectItem({
         </p>
       </div>
 
-      {/* Delete button */}
+      {/* Action buttons */}
       {isHovered && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-        >
-          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </Button>
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100">
+          {/* Remove button - removes from list only */}
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRemove()
+                  }}
+                >
+                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                Remove from list
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Delete button - deletes folder from disk */}
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete()
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                Delete from disk
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       )}
     </button>
   )

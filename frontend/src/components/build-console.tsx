@@ -125,6 +125,7 @@ export function BuildConsole({
               >
                 <option value="release">Release</option>
                 <option value="debug">Debug</option>
+                <option value="profile">Profile</option>
               </Select>
 
               <Select

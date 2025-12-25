@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Upload, ImagePlus, X, Plus, Trash2, Check } from 'lucide-react'
+import { ImagePlus, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import { checkAppAssets } from '@/services/api'
-import type { App, AppFormData, Platform, BuildSettings, PlatformSettings } from '@/types'
+import { fetchAvailableSteps } from '@/services/api'
+import { InlineWorkflowEditor } from '@/components/workflows'
+import type { App, AppFormData, Platform, BuildSettings, PlatformSettings, WorkflowStep, WorkflowConfig, StepType } from '@/types'
 
 interface AppFormProps {
   open: boolean
@@ -36,12 +37,12 @@ const platformLabels: Record<Platform, string> = {
   linux: 'Linux',
 }
 
-// Helper to ensure arrays
-function ensureArray(value: string | string[] | undefined): string[] {
-  if (!value) return []
-  if (Array.isArray(value)) return value
-  // Handle legacy string format (comma-separated)
-  return value.split(',').map(s => s.trim()).filter(Boolean)
+// Helper to ensure workflow config
+function ensureWorkflowConfig(workflow: WorkflowConfig | undefined): WorkflowConfig {
+  return {
+    preSteps: workflow?.preSteps || [],
+    postSteps: workflow?.postSteps || [],
+  }
 }
 
 export function AppForm({
@@ -61,25 +62,29 @@ export function AppForm({
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [activePlatformTab, setActivePlatformTab] = useState<Platform | null>(null)
-  const [hasExistingResZip, setHasExistingResZip] = useState(false)
+  const [availableSteps, setAvailableSteps] = useState<StepType[]>([])
   const logoInputRef = useRef<HTMLInputElement>(null)
-  const resZipInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch available workflow steps
+  useEffect(() => {
+    fetchAvailableSteps()
+      .then(setAvailableSteps)
+      .catch(console.error)
+  }, [])
 
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && app) {
-        // Convert legacy string format to arrays if needed
+        // Convert build settings to only contain workflow
         const convertedBuildSettings: Partial<Record<Platform, BuildSettings>> = {}
         if (app.buildSettings) {
           for (const [platform, settings] of Object.entries(app.buildSettings)) {
             convertedBuildSettings[platform as Platform] = {
               build: settings?.build ? {
-                args: ensureArray(settings.build.args),
-                dartDefines: ensureArray(settings.build.dartDefines),
+                workflow: ensureWorkflowConfig(settings.build.workflow),
               } : undefined,
               run: settings?.run ? {
-                args: ensureArray(settings.run.args),
-                dartDefines: ensureArray(settings.run.dartDefines),
+                workflow: ensureWorkflowConfig(settings.run.workflow),
               } : undefined,
             }
           }
@@ -94,15 +99,6 @@ export function AppForm({
         })
         // Set active tab to first enabled platform, or first platform overall
         setActivePlatformTab(app.platforms[0] || allPlatforms[0])
-
-        // Check if res.zip exists for this app
-        checkAppAssets(app.id)
-          .then((assets) => {
-            setHasExistingResZip(assets.hasResZip)
-          })
-          .catch(() => {
-            setHasExistingResZip(false)
-          })
       } else {
         // For add mode, pre-select the project's detected platforms
         setFormData({
@@ -113,7 +109,6 @@ export function AppForm({
         })
         // Set active tab to first default platform, or first platform overall
         setActivePlatformTab(defaultPlatforms[0] || allPlatforms[0])
-        setHasExistingResZip(false)
       }
       setErrors({})
     }
@@ -159,13 +154,6 @@ export function AppForm({
     })
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setFormData((prev) => ({ ...prev, androidAppIcon: file }))
-    }
-  }
-
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -185,29 +173,28 @@ export function AppForm({
     }
   }
 
-  // Get current array values for a field
-  const getArrayValues = (
+  // Get workflow steps for a platform/mode/position
+  const getWorkflowSteps = (
     platform: Platform,
     settingsMode: 'build' | 'run',
-    field: keyof PlatformSettings
-  ): string[] => {
+    position: 'preSteps' | 'postSteps'
+  ): WorkflowStep[] => {
     const settings = formData.buildSettings?.[platform]?.[settingsMode]
-    if (!settings) return []
-    const value = settings[field]
-    return ensureArray(value)
+    return settings?.workflow?.[position] || []
   }
 
-  // Update array values for a field
-  const updateArrayValues = (
+  // Update workflow steps
+  const updateWorkflowSteps = (
     platform: Platform,
     settingsMode: 'build' | 'run',
-    field: keyof PlatformSettings,
-    values: string[]
+    position: 'preSteps' | 'postSteps',
+    steps: WorkflowStep[]
   ) => {
     setFormData((prev) => {
       const currentSettings = prev.buildSettings || {}
       const platformSettings: BuildSettings = currentSettings[platform] || {}
-      const modeSettings: PlatformSettings = platformSettings[settingsMode] || { args: [], dartDefines: [] }
+      const modeSettings: PlatformSettings = platformSettings[settingsMode] || {}
+      const currentWorkflow = modeSettings.workflow || { preSteps: [], postSteps: [] }
 
       return {
         ...prev,
@@ -217,35 +204,15 @@ export function AppForm({
             ...platformSettings,
             [settingsMode]: {
               ...modeSettings,
-              [field]: values
+              workflow: {
+                ...currentWorkflow,
+                [position]: steps
+              }
             }
           }
         }
       }
     })
-  }
-
-  // Add a new value to an array field
-  const addArrayValue = (
-    platform: Platform,
-    settingsMode: 'build' | 'run',
-    field: keyof PlatformSettings,
-    value: string
-  ) => {
-    if (!value.trim()) return
-    const currentValues = getArrayValues(platform, settingsMode, field)
-    updateArrayValues(platform, settingsMode, field, [...currentValues, value.trim()])
-  }
-
-  // Remove a value from an array field
-  const removeArrayValue = (
-    platform: Platform,
-    settingsMode: 'build' | 'run',
-    field: keyof PlatformSettings,
-    index: number
-  ) => {
-    const currentValues = getArrayValues(platform, settingsMode, field)
-    updateArrayValues(platform, settingsMode, field, currentValues.filter((_, i) => i !== index))
   }
 
   return (
@@ -353,9 +320,9 @@ export function AppForm({
 
             {/* Platform Selection & Configuration */}
             <div className="space-y-4">
-              <h6 className="font-semibold">Platforms & Configuration</h6>
+              <h6 className="font-semibold">Platforms & Workflow</h6>
               <p className="text-sm text-muted-foreground">
-                Enable platforms and configure build/run arguments
+                Enable platforms and configure build/run workflow steps. Use platform-specific setup steps (e.g., "Android Setup") in your workflow.
               </p>
 
               {/* Platform Tabs with Checkboxes */}
@@ -396,48 +363,50 @@ export function AppForm({
                   <div className="p-4 space-y-4">
                     {!formData.platforms.includes(activePlatformTab) ? (
                       <div className="text-center py-6 text-muted-foreground">
-                        <p className="text-sm">Enable {platformLabels[activePlatformTab]} to configure build settings</p>
+                        <p className="text-sm">Enable {platformLabels[activePlatformTab]} to configure workflow</p>
                       </div>
                     ) : (
                       <>
-                        {/* Build Settings */}
+                        {/* Build Workflow */}
                         <div className="space-y-3">
-                          <div className="text-xs font-semibold text-primary uppercase tracking-wide">Build</div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <ArrayInputField
-                              label="Arguments"
-                              placeholder="e.g. --obfuscate"
-                              values={getArrayValues(activePlatformTab, 'build', 'args')}
-                              onAdd={(value) => addArrayValue(activePlatformTab, 'build', 'args', value)}
-                              onRemove={(index) => removeArrayValue(activePlatformTab, 'build', 'args', index)}
+                          <div className="text-xs font-semibold text-primary uppercase tracking-wide">Build Workflow</div>
+                          <p className="text-xs text-muted-foreground">
+                            Add steps to run before/after flutter build. Use "Android Setup" for Android config, "Custom Arguments" for build flags.
+                          </p>
+                          <div className="space-y-2">
+                            <InlineWorkflowEditor
+                              title="Pre-Build Steps"
+                              steps={getWorkflowSteps(activePlatformTab, 'build', 'preSteps')}
+                              availableSteps={availableSteps}
+                              onChange={(steps) => updateWorkflowSteps(activePlatformTab, 'build', 'preSteps', steps)}
                             />
-                            <ArrayInputField
-                              label="Dart Defines"
-                              placeholder="e.g. FLAVOR=prod"
-                              values={getArrayValues(activePlatformTab, 'build', 'dartDefines')}
-                              onAdd={(value) => addArrayValue(activePlatformTab, 'build', 'dartDefines', value)}
-                              onRemove={(index) => removeArrayValue(activePlatformTab, 'build', 'dartDefines', index)}
+                            <InlineWorkflowEditor
+                              title="Post-Build Steps"
+                              steps={getWorkflowSteps(activePlatformTab, 'build', 'postSteps')}
+                              availableSteps={availableSteps}
+                              onChange={(steps) => updateWorkflowSteps(activePlatformTab, 'build', 'postSteps', steps)}
                             />
                           </div>
                         </div>
 
-                        {/* Run Settings */}
+                        {/* Run Workflow */}
                         <div className="space-y-3">
-                          <div className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide">Run</div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <ArrayInputField
-                              label="Arguments"
-                              placeholder="e.g. --flavor dev"
-                              values={getArrayValues(activePlatformTab, 'run', 'args')}
-                              onAdd={(value) => addArrayValue(activePlatformTab, 'run', 'args', value)}
-                              onRemove={(index) => removeArrayValue(activePlatformTab, 'run', 'args', index)}
+                          <div className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide">Run Workflow</div>
+                          <p className="text-xs text-muted-foreground">
+                            Add steps to run before/after flutter run. Use "Custom Arguments" step to add run flags.
+                          </p>
+                          <div className="space-y-2">
+                            <InlineWorkflowEditor
+                              title="Pre-Run Steps"
+                              steps={getWorkflowSteps(activePlatformTab, 'run', 'preSteps')}
+                              availableSteps={availableSteps}
+                              onChange={(steps) => updateWorkflowSteps(activePlatformTab, 'run', 'preSteps', steps)}
                             />
-                            <ArrayInputField
-                              label="Dart Defines"
-                              placeholder="e.g. BASE_URL=https://..."
-                              values={getArrayValues(activePlatformTab, 'run', 'dartDefines')}
-                              onAdd={(value) => addArrayValue(activePlatformTab, 'run', 'dartDefines', value)}
-                              onRemove={(index) => removeArrayValue(activePlatformTab, 'run', 'dartDefines', index)}
+                            <InlineWorkflowEditor
+                              title="Post-Run Steps"
+                              steps={getWorkflowSteps(activePlatformTab, 'run', 'postSteps')}
+                              availableSteps={availableSteps}
+                              onChange={(steps) => updateWorkflowSteps(activePlatformTab, 'run', 'postSteps', steps)}
                             />
                           </div>
                         </div>
@@ -450,75 +419,6 @@ export function AppForm({
                 <p className="text-sm text-destructive">{errors.platforms}</p>
               )}
             </div>
-
-            {/* Assets Section - Show when Android tab is selected and enabled */}
-            {activePlatformTab === 'android' && formData.platforms.includes('android') && (
-              <div className="space-y-4">
-                <h6 className="font-semibold">Android Assets</h6>
-                <div className="space-y-2">
-                  <Label>App Icon (res.zip)</Label>
-                  
-                  {/* Show existing res.zip status in edit mode */}
-                  {mode === 'edit' && hasExistingResZip && !formData.androidAppIcon && (
-                    <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-md">
-                      <Check className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-green-700 dark:text-green-400">
-                        res.zip already uploaded
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="ml-auto h-7 text-xs"
-                        onClick={() => resZipInputRef.current?.click()}
-                      >
-                        Replace
-                      </Button>
-                    </div>
-                  )}
-                  
-                  {/* Show file input if no existing file or user wants to replace */}
-                  {(!hasExistingResZip || formData.androidAppIcon || mode === 'add') && (
-                    <Input
-                      ref={resZipInputRef}
-                      type="file"
-                      accept=".zip"
-                      onChange={handleFileChange}
-                      className="cursor-pointer"
-                    />
-                  )}
-                  
-                  {/* Hidden input for replace functionality */}
-                  {mode === 'edit' && hasExistingResZip && !formData.androidAppIcon && (
-                    <input
-                      ref={resZipInputRef}
-                      type="file"
-                      accept=".zip"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  )}
-                  
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
-                    <Upload className="h-3 w-3" />
-                    Upload res.zip containing mipmap folders for Android icon resources.
-                    <a
-                      href="https://icon.kitchen/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      Generate icons here
-                    </a>
-                    {formData.androidAppIcon && (
-                      <span className="text-green-600 ml-2">
-                        ✓ {formData.androidAppIcon.name}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         </DialogBody>
 
@@ -541,81 +441,6 @@ export function AppForm({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-// Component for array input fields (args and dart-defines)
-interface ArrayInputFieldProps {
-  label: string
-  placeholder: string
-  values: string[]
-  onAdd: (value: string) => void
-  onRemove: (index: number) => void
-}
-
-function ArrayInputField({ label, placeholder, values, onAdd, onRemove }: ArrayInputFieldProps) {
-  const [inputValue, setInputValue] = useState('')
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      if (inputValue.trim()) {
-        onAdd(inputValue)
-        setInputValue('')
-      }
-    }
-  }
-
-  const handleAddClick = () => {
-    if (inputValue.trim()) {
-      onAdd(inputValue)
-      setInputValue('')
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs">{label}</Label>
-      <div className="space-y-1">
-        {/* Existing values as rows */}
-        {values.map((value, index) => (
-          <div
-            key={index}
-            className="group flex items-center gap-2 px-2 py-1.5 bg-muted/50 rounded text-sm font-mono"
-          >
-            <span className="flex-1 truncate">{value}</span>
-            <button
-              type="button"
-              onClick={() => onRemove(index)}
-              className="p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        
-        {/* Input for adding new values */}
-        <div className="flex items-center gap-1">
-          <Input
-            placeholder={placeholder}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="h-8 text-sm font-mono flex-1"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleAddClick}
-            disabled={!inputValue.trim()}
-            className="h-8 w-8 p-0"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
   )
 }
 

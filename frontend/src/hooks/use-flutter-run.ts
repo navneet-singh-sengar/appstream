@@ -9,7 +9,7 @@ import {
     hotRestart,
     getFlutterStatus,
 } from '@/services/api'
-import type { LogEntry } from '@/types'
+import type { LogEntry, RunMode } from '@/types'
 
 export function useFlutterRun() {
     const [isStarting, setIsStarting] = useState(false)
@@ -40,7 +40,7 @@ export function useFlutterRun() {
     const fetchDevicesInternal = useCallback(async (forceRefresh = false) => {
         // Prevent duplicate fetches
         if (isFetchingRef.current) return
-        
+
         // Skip if already fetched for this project (unless force refresh)
         if (!forceRefresh && selectedProject?.id === devicesFetchedForProject) {
             return
@@ -48,7 +48,7 @@ export function useFlutterRun() {
 
         isFetchingRef.current = true
         setIsLoadingDevices(true)
-        
+
         try {
             const deviceList = await getFlutterDevices(selectedProject?.id)
             setDevices(deviceList)
@@ -95,7 +95,7 @@ export function useFlutterRun() {
     }, [setFlutterRunning])
 
     // Start app
-    const start = useCallback(async () => {
+    const start = useCallback(async (runMode: RunMode = 'debug') => {
         if (!selectedDevice) {
             setRunError('No device selected')
             return
@@ -111,8 +111,8 @@ export function useFlutterRun() {
         setRunError(null)
 
         try {
-            // Pass app_id to get run settings
-            await startFlutterRun(selectedDevice, selectedProject.id, selectedApp?.id)
+            // Pass app_id and run_mode to get run settings
+            await startFlutterRun(selectedDevice, selectedProject.id, selectedApp?.id, runMode)
             setFlutterRunning(true, selectedDevice)
         } catch (error) {
             console.error('Failed to start Flutter app:', error)
