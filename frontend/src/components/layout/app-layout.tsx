@@ -156,18 +156,16 @@ export function AppLayout() {
         setAppFormOpen(true)
     }, [selectedProject, addToast])
 
-    const handleEditApp = useCallback(() => {
-        if (selectedApp) {
-            setAppFormMode('edit')
-            setEditingApp(selectedApp)
-            setAppFormOpen(true)
-        }
-    }, [selectedApp])
+    const handleEditApp = useCallback((app: App) => {
+        setAppFormMode('edit')
+        setEditingApp(app)
+        setAppFormOpen(true)
+    }, [])
 
-    const handleDeleteApp = useCallback(() => {
-        if (!selectedApp) return
+    const handleDeleteApp = useCallback((app: App) => {
+        selectAppById(app.id) // Ensure it's selected for the confirmation dialog message
         setDeleteAppDialogOpen(true)
-    }, [selectedApp])
+    }, [selectAppById])
 
     const confirmDeleteApp = useCallback(async () => {
         if (!selectedApp || !selectedProject) return
@@ -272,6 +270,8 @@ export function AppLayout() {
                                 isLoading={isLoadingApps}
                                 onSelectApp={handleSelectApp}
                                 onAddApp={handleAddApp}
+                                onEditApp={handleEditApp}
+                                onDeleteApp={handleDeleteApp}
                             />
                         )}
                     </Sidebar>
@@ -292,8 +292,6 @@ export function AppLayout() {
                                         onBuild={handleBuild}
                                         onStopBuild={handleStopBuild}
                                         onClearLogs={clearBuildLogs}
-                                        onEditApp={handleEditApp}
-                                        onDeleteApp={handleDeleteApp}
                                     />
                                 ) : (
                                     <WelcomeMessage hasProject={!!selectedProject} />

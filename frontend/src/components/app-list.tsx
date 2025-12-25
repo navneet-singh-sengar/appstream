@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Search, Plus, Layers } from 'lucide-react'
+import { Search, Plus, Layers, Edit, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,8 @@ interface AppListProps {
     isLoading: boolean
     onSelectApp: (app: App) => void
     onAddApp: () => void
+    onEditApp: (app: App) => void
+    onDeleteApp: (app: App) => void
 }
 
 export function AppList({
@@ -32,9 +34,12 @@ export function AppList({
     isLoading,
     onSelectApp,
     onAddApp,
+    onEditApp,
+    onDeleteApp,
 }: AppListProps) {
     const { isCollapsed } = useSidebar()
     const [searchQuery, setSearchQuery] = useState('')
+    const [hoveredAppId, setHoveredAppId] = useState<string | null>(null)
 
     const filteredApps = useMemo(() => {
         if (!searchQuery.trim()) return apps
@@ -96,8 +101,13 @@ export function AppList({
                                     key={app.id}
                                     app={app}
                                     isSelected={selectedApp?.id === app.id}
+                                    isHovered={hoveredAppId === app.id}
                                     isCollapsed={isCollapsed}
                                     onClick={() => onSelectApp(app)}
+                                    onMouseEnter={() => setHoveredAppId(app.id)}
+                                    onMouseLeave={() => setHoveredAppId(null)}
+                                    onEdit={() => onEditApp(app)}
+                                    onDelete={() => onDeleteApp(app)}
                                 />
                             ))}
                         </div>
@@ -155,11 +165,26 @@ function EmptyState({ isCollapsed, hasSearch, onAddApp }: EmptyStateProps) {
 interface AppItemProps {
     app: App
     isSelected: boolean
+    isHovered: boolean
     isCollapsed: boolean
     onClick: () => void
+    onMouseEnter: () => void
+    onMouseLeave: () => void
+    onEdit: () => void
+    onDelete: () => void
 }
 
-function AppItem({ app, isSelected, isCollapsed, onClick }: AppItemProps) {
+function AppItem({
+    app,
+    isSelected,
+    isHovered,
+    isCollapsed,
+    onClick,
+    onMouseEnter,
+    onMouseLeave,
+    onEdit,
+    onDelete,
+}: AppItemProps) {
     const initial = app.appName.charAt(0).toUpperCase()
     const hasLogo = !!app.logoUrl
 
@@ -226,12 +251,14 @@ function AppItem({ app, isSelected, isCollapsed, onClick }: AppItemProps) {
     return (
         <button
             className={cn(
-                'w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-colors text-left',
+                'w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-colors text-left group',
                 isSelected
                     ? 'bg-accent text-accent-foreground'
                     : 'hover:bg-muted/50'
             )}
             onClick={onClick}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
         >
             {/* Avatar / Logo */}
             {hasLogo ? (
@@ -277,6 +304,34 @@ function AppItem({ app, isSelected, isCollapsed, onClick }: AppItemProps) {
                     ))}
                 </div>
             </div>
+
+            {/* Hover Actions */}
+            {isHovered && (
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onEdit()
+                        }}
+                    >
+                        <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onDelete()
+                        }}
+                    >
+                        <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                </div>
+            )}
         </button>
     )
 }

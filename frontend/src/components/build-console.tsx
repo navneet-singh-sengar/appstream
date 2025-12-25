@@ -3,8 +3,6 @@ import {
   Terminal,
   Play,
   Square,
-  Edit,
-  Trash,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -49,8 +47,6 @@ interface BuildConsoleProps {
   onBuild: (platform: Platform, buildType: BuildType, outputType: BuildOutputType) => void
   onStopBuild: () => void
   onClearLogs: () => void
-  onEditApp: () => void
-  onDeleteApp: () => void
 }
 
 export function BuildConsole({
@@ -61,8 +57,6 @@ export function BuildConsole({
   onBuild,
   onStopBuild,
   onClearLogs,
-  onEditApp,
-  onDeleteApp,
 }: BuildConsoleProps) {
   // Build configuration state
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('android')
@@ -165,14 +159,6 @@ export function BuildConsole({
                   Build
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={onEditApp} className="gap-1.5">
-                <Edit className="h-4 w-4" />
-                Edit
-              </Button>
-              <Button variant="destructive" size="sm" onClick={onDeleteApp} className="gap-1.5">
-                <Trash className="h-4 w-4" />
-                Delete
-              </Button>
             </div>
           </div>
         ) : (
