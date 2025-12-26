@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { FolderOpen, Plus, Trash2, GitBranch, Check, Info, MoreVertical, X } from 'lucide-react'
+import { FolderOpen, Plus, Trash2, GitBranch, Check, Info, MoreVertical, X, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
@@ -14,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import {
   useSidebar,
@@ -34,6 +35,10 @@ interface ProjectListProps {
   onDeleteProject: (project: Project) => void
   onSelectionChange: (selectedIds: Set<string>) => void
   onShowInfo: (project: Project) => void
+  onClean: (project: Project) => void
+  onCleanSelected: () => void
+  onRemoveSelected: () => void
+  onDeleteSelected: () => void
 }
 
 export function ProjectList({
@@ -47,12 +52,17 @@ export function ProjectList({
   onDeleteProject,
   onSelectionChange,
   onShowInfo,
+  onClean,
+  onCleanSelected,
+  onRemoveSelected,
+  onDeleteSelected,
 }: ProjectListProps) {
   const { isCollapsed } = useSidebar()
   const [hoveredProject, setHoveredProject] = useState<string | null>(null)
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null)
 
   const isSelectionMode = selectedProjectIds.size > 0
+  const selectedCount = selectedProjectIds.size
 
   const handleCheckboxChange = useCallback((project: Project, index: number, shiftKey: boolean) => {
     const newSelection = new Set(selectedProjectIds)
@@ -83,14 +93,50 @@ export function ProjectList({
         icon={<FolderOpen className="h-4 w-4" />}
         title="Projects"
         action={
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={onAddProject}
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-0.5">
+            {/* Add project button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={onAddProject}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+
+            {/* Batch operations menu - only show when items are selected */}
+            {isSelectionMode && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                  >
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={onCleanSelected}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Clean Selected ({selectedCount})
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onRemoveSelected}>
+                    <X className="h-4 w-4 mr-2" />
+                    Remove Selected ({selectedCount})
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={onDeleteSelected}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Selected ({selectedCount})
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         }
       />
 
@@ -119,6 +165,7 @@ export function ProjectList({
                 onRemove={() => onRemoveProject(project)}
                 onDelete={() => onDeleteProject(project)}
                 onShowInfo={() => onShowInfo(project)}
+                onClean={() => onClean(project)}
                 onCheckboxChange={(shiftKey) => handleCheckboxChange(project, index, shiftKey)}
               />
             ))}
@@ -182,6 +229,7 @@ interface ProjectItemProps {
   onRemove: () => void
   onDelete: () => void
   onShowInfo: () => void
+  onClean: () => void
   onCheckboxChange: (shiftKey: boolean) => void
 }
 
@@ -198,6 +246,7 @@ function ProjectItem({
   onRemove,
   onDelete,
   onShowInfo,
+  onClean,
   onCheckboxChange,
 }: ProjectItemProps) {
   const initial = project.name.charAt(0).toUpperCase()
@@ -248,15 +297,11 @@ function ProjectItem({
       )}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        // Context menu handled by dropdown
-      }}
     >
       {/* Checkbox */}
       <button
         className={cn(
-          'w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all',
+          'w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 transition-all',
           isChecked
             ? 'bg-primary border-primary text-primary-foreground'
             : 'border-muted-foreground/30 hover:border-primary',
@@ -267,7 +312,7 @@ function ProjectItem({
           onCheckboxChange(e.shiftKey)
         }}
       >
-        {isChecked && <Check className="h-3 w-3" />}
+        {isChecked && <Check className="h-2.5 w-2.5" />}
       </button>
 
       {/* Clickable area for navigation */}
@@ -304,32 +349,9 @@ function ProjectItem({
         </div>
       </button>
 
-      {/* Action buttons - Info and More menu */}
+      {/* Context menu button */}
       {isHovered && !isSelectionMode && (
-        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100">
-          {/* Info button */}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onShowInfo()
-                  }}
-                >
-                  <Info className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                Project info
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {/* More menu */}
+        <div className="shrink-0 opacity-0 group-hover:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -342,13 +364,22 @@ function ProjectItem({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onClean}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Clean
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onShowInfo}>
+                <Info className="h-4 w-4 mr-2" />
+                Info
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onRemove}>
                 <X className="h-4 w-4 mr-2" />
-                Remove
+                Remove from list
               </DropdownMenuItem>
               <DropdownMenuItem variant="destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete
+                Delete from disk
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

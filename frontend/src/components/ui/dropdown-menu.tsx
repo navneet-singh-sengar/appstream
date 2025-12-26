@@ -64,27 +64,29 @@ export function DropdownMenuContent({
     className,
 }: DropdownMenuContentProps) {
     const context = React.useContext(DropdownMenuContext)
-    const [position, setPosition] = React.useState({ top: 0, left: 0 })
     const contentRef = React.useRef<HTMLDivElement>(null)
 
-    React.useEffect(() => {
-        if (context?.open && context.triggerRef.current) {
-            const rect = context.triggerRef.current.getBoundingClientRect()
-            const contentWidth = 160 // approximate width
-
-            let left = rect.left
-            if (align === 'end') {
-                left = rect.right - contentWidth
-            } else if (align === 'center') {
-                left = rect.left + rect.width / 2 - contentWidth / 2
-            }
-
-            setPosition({
-                top: rect.bottom + 4,
-                left: Math.max(8, left),
-            })
+    // Calculate position synchronously when open changes
+    const getPosition = React.useCallback(() => {
+        if (!context?.triggerRef.current) {
+            return { top: -9999, left: -9999 } // Off-screen default
         }
-    }, [context?.open, context?.triggerRef, align])
+        
+        const rect = context.triggerRef.current.getBoundingClientRect()
+        const contentWidth = 160 // approximate width
+
+        let left = rect.left
+        if (align === 'end') {
+            left = rect.right - contentWidth
+        } else if (align === 'center') {
+            left = rect.left + rect.width / 2 - contentWidth / 2
+        }
+
+        return {
+            top: rect.bottom + 4,
+            left: Math.max(8, left),
+        }
+    }, [context?.triggerRef, align])
 
     React.useEffect(() => {
         if (!context?.open) return
@@ -117,12 +119,14 @@ export function DropdownMenuContent({
 
     if (!context?.open) return null
 
+    const position = getPosition()
+
     return createPortal(
         <div
             ref={contentRef}
             className={cn(
                 'fixed z-50 min-w-[160px] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
-                'animate-in fade-in-0 zoom-in-95',
+                'animate-in fade-in-0 zoom-in-95 duration-100',
                 className
             )}
             style={{ top: position.top, left: position.left }}
@@ -177,4 +181,3 @@ export function DropdownMenuItem({
 export function DropdownMenuSeparator() {
     return <div className="-mx-1 my-1 h-px bg-border" />
 }
-

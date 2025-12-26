@@ -1,6 +1,9 @@
-import { Sun, Moon } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Sun, Moon, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { SystemInfoDialog } from '@/components/system-info-dialog'
+import { HelpDialog } from '@/components/help-dialog'
 
 interface NavbarProps {
     isDark: boolean
@@ -27,20 +30,52 @@ function AppStreamIcon({ className }: { className?: string }) {
 }
 
 export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
+    const [helpOpen, setHelpOpen] = useState(false)
+
+    // Global keyboard shortcut for help
+    const handleKeyDown = useCallback((e: KeyboardEvent) => {
+        // Open help with ? key (not in input fields)
+        if (e.key === '?' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+            e.preventDefault()
+            setHelpOpen(true)
+        }
+    }, [])
+
+    useEffect(() => {
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [handleKeyDown])
+
     return (
-        <nav className="border-b bg-card px-4 py-3 shrink-0">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-semibold text-lg">
-                    <AppStreamIcon className="h-6 w-6" />
-                    AppStream
+        <>
+            <nav className="border-b bg-card px-4 py-3 shrink-0">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-semibold text-lg">
+                        <AppStreamIcon className="h-6 w-6" />
+                        AppStream
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)}>
+                                        <HelpCircle className="h-5 w-5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Help (Press ?)</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                        <SystemInfoDialog />
+                        <Button variant="ghost" size="icon" onClick={onToggleTheme}>
+                            {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                        </Button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-1">
-                    <SystemInfoDialog />
-                    <Button variant="ghost" size="icon" onClick={onToggleTheme}>
-                        {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-                    </Button>
-                </div>
-            </div>
-        </nav>
+            </nav>
+
+            <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+        </>
     )
 }

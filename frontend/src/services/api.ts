@@ -87,6 +87,37 @@ export async function removeProject(projectId: string): Promise<{ message: strin
   return deleteProject(projectId, false)
 }
 
+// Batch project operations
+export interface BatchProjectResult {
+  project_id: string
+  project_name: string
+  status: 'success' | 'error'
+  message: string
+}
+
+export async function deleteProjectsBatch(
+  projectIds: string[],
+  deleteFolder: boolean = false
+): Promise<{ results: BatchProjectResult[] }> {
+  const response = await fetch(`${API_BASE_URL}/projects/batch`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ project_ids: projectIds, delete_folder: deleteFolder }),
+  })
+  return handleResponse<{ results: BatchProjectResult[] }>(response)
+}
+
+// Convenience functions for batch operations
+export async function removeProjectsBatch(projectIds: string[]): Promise<{ results: BatchProjectResult[] }> {
+  return deleteProjectsBatch(projectIds, false)
+}
+
+export async function deleteProjectsFoldersBatch(projectIds: string[]): Promise<{ results: BatchProjectResult[] }> {
+  return deleteProjectsBatch(projectIds, true)
+}
+
 export async function cloneProject(data: {
   name: string
   repositoryUrl: string

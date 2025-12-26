@@ -1,0 +1,363 @@
+---
+alwaysApply: true
+---
+
+# AppStream - Flutter App Builder
+
+## Project Overview
+
+AppStream is a desktop application for managing, developing, and building Flutter projects. It provides a unified interface for project management, live development with hot reload, and multi-platform build automation.
+
+## Architecture
+
+### Frontend (React + TypeScript)
+- **Location**: `frontend/`
+- **Framework**: React 18 with TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS with custom UI components
+- **State Management**: Zustand store (`src/store/index.ts`)
+- **Routing**: React Router v6
+
+### Backend (Python + Flask)
+- **Location**: `backend/`
+- **Framework**: Flask with Flask-SocketIO for real-time communication
+- **Data Storage**: JSON files in `data/projects/`
+- **Services Pattern**: Business logic in `services/` directory
+
+## Key Concepts
+
+### Projects vs Apps
+- **Project**: A Flutter source code directory on disk (contains `pubspec.yaml`)
+- **App**: A configuration layer on top of a project (name, package ID, platforms, workflows)
+- One project can have multiple app configurations
+
+### Workflows
+- Automated pre/post steps for build and run operations
+- Steps are defined in `backend/services/workflows/steps/`
+- Each step inherits from `WorkflowStep` base class
+
+## Directory Structure
+
+```
+frontend/
+├── src/
+│   ├── components/       # React components
+│   │   ├── ui/          # Reusable UI components (Button, Dialog, etc.)
+│   │   ├── layout/      # Layout components (Navbar, AppLayout)
+│   │   └── workflows/   # Workflow editor components
+│   ├── hooks/           # Custom React hooks
+│   ├── services/        # API and socket services
+│   ├── store/           # Zustand state store
+│   ├── types/           # TypeScript type definitions
+│   └── data/            # Static data (help content)
+
+backend/
+├── routes/              # Flask blueprints (API endpoints)
+├── services/            # Business logic
+│   ├── platforms/       # Platform-specific build handlers
+│   └── workflows/       # Workflow execution
+│       └── steps/       # Individual workflow steps
+├── websocket/           # WebSocket handlers
+└── data/                # JSON data storage
+```
+
+## Coding Conventions
+
+### Frontend (TypeScript/React)
+
+1. **Components**: Use functional components with hooks
+2. **File naming**: kebab-case for files (`project-list.tsx`)
+3. **Component naming**: PascalCase (`ProjectList`)
+4. **Hooks**: Prefix with `use` (`useProjects`, `useBuild`)
+5. **Types**: Define in `types/index.ts`, use explicit types over `any`
+
+```typescript
+// Component pattern
+interface ComponentProps {
+    prop: string
+    onAction: () => void
+}
+
+export function Component({ prop, onAction }: ComponentProps) {
+    // ...
+}
+```
+
+6. **UI Components**: Located in `components/ui/`, follow shadcn/ui patterns
+7. **Icons**: Use Lucide React icons
+8. **Styling**: Use Tailwind CSS with `cn()` utility for conditional classes
+
+### Backend (Python)
+
+1. **File naming**: snake_case (`project_service.py`)
+2. **Class naming**: PascalCase (`ProjectService`)
+3. **Services**: Singleton pattern via Flask extensions
+4. **Routes**: Flask Blueprints with RESTful conventions
+
+```python
+# Service pattern
+class MyService:
+    def __init__(self, app=None):
+        self.app = app
+        if app is not None:
+            self.init_app(app)
+    
+    def init_app(self, app):
+        app.extensions['my_service'] = self
+```
+
+5. **Workflow Steps**: Inherit from `WorkflowStep` base class
+6. **Error handling**: Return JSON with `error` key and appropriate status codes
+
+## API Patterns
+
+### REST Endpoints
+- `GET /api/projects` - List all projects
+- `POST /api/projects` - Create project
+- `GET /api/projects/<id>` - Get project
+- `PUT /api/projects/<id>` - Update project
+- `DELETE /api/projects/<id>` - Delete project
+
+### WebSocket Events
+- `build_log` - Real-time build output
+- `run_log` - Real-time run output
+- `build_status` - Build state changes
+- `run_status` - Run state changes
+
+## Type Definitions
+
+### Core Types (frontend/src/types/index.ts)
+
+```typescript
+// Project
+interface Project {
+    id: string
+    name: string
+    path: string
+    created_at: string
+    is_cloned?: boolean
+}
+
+// App
+interface App {
+    id: string
+    project_id: string
+    appName: string
+    packageId: string
+    platforms: Platform[]
+    buildSettings?: Partial<Record<Platform, BuildSettings>>
+}
+
+// Platform
+type Platform = 'android' | 'ios' | 'web' | 'macos' | 'windows' | 'linux'
+
+// Workflow Step
+interface WorkflowStep {
+    id: string
+    type: string
+    name?: string
+    config: Record<string, unknown>
+}
+```
+
+## Creating New Features
+
+### Adding a New Workflow Step
+
+1. Create step file in `backend/services/workflows/steps/`:
+
+```python
+from .base import WorkflowStep, StepResult, StepConfigField
+
+class MyStep(WorkflowStep):
+    step_type = "my_step"
+    display_name = "My Step"
+    description = "Description of what this step does"
+    icon = "Settings"  # Lucide icon name
+    category = "general"
+    
+    config_fields = [
+        StepConfigField(
+            name="field_name",
+            label="Field Label",
+            type="string",  # string, number, boolean, select, textarea, file
+            required=True,
+            description="Help text"
+        )
+    ]
+    
+    def execute(self, context: dict) -> StepResult:
+        # Implementation
+        return StepResult(success=True, message="Done")
+    
+    def validate(self) -> tuple[bool, str | None]:
+        # Validation logic
+        return True, None
+```
+
+2. Register in `backend/services/workflows/steps/__init__.py`
+
+### Adding a New UI Component
+
+1. Create component in `frontend/src/components/`
+2. Use existing UI primitives from `components/ui/`
+3. Follow the established patterns for props and state
+
+### Adding a New API Endpoint
+
+1. Add route in appropriate blueprint (`backend/routes/`)
+2. Add service method if needed (`backend/services/`)
+3. Add API function in `frontend/src/services/api.ts`
+4. Add types in `frontend/src/types/index.ts`
+
+## UI Component Library
+
+Custom UI components in `frontend/src/components/ui/`:
+
+- `Button` - Variants: default, destructive, outline, ghost
+- `Dialog` - Modal dialogs with header, body, footer
+- `Input` / `Select` / `Checkbox` - Form inputs
+- `Card` - Content containers
+- `Toast` - Notifications via `useToast` hook
+- `Tooltip` - Hover tooltips
+- `DropdownMenu` - Context menus
+- `Console` - Log output display
+
+## State Management
+
+### Zustand Store (`frontend/src/store/index.ts`)
+
+```typescript
+const useStore = create<AppState>((set) => ({
+    // State
+    selectedProject: null,
+    selectedApp: null,
+    
+    // Actions
+    setSelectedProject: (project) => set({ selectedProject: project }),
+}))
+```
+
+### Custom Hooks
+
+- `useProjects` - Project CRUD operations
+- `useApps` - App CRUD operations  
+- `useBuild` - Build process management
+- `useFlutterRun` - Live development (run, reload, restart)
+- `useSocket` - WebSocket connection
+
+## Testing Commands
+
+```bash
+# Frontend
+cd frontend
+npm run dev      # Development server
+npm run build    # Production build
+npm run lint     # ESLint
+
+# Backend
+cd backend
+python server.py # Start server
+```
+
+## Common Patterns
+
+### Portal-based Modals
+Use `createPortal` for modals/dropdowns that need to escape parent overflow:
+
+```typescript
+import { createPortal } from 'react-dom'
+
+return createPortal(
+    <div className="fixed inset-0 z-50">...</div>,
+    document.body
+)
+```
+
+### Real-time Updates
+Use WebSocket events for real-time data:
+
+```typescript
+useEffect(() => {
+    const socket = getSocket()
+    socket.on('event_name', handleEvent)
+    return () => socket.off('event_name', handleEvent)
+}, [])
+```
+
+### Form Handling
+Use controlled components with state:
+
+```typescript
+const [formData, setFormData] = useState<FormData>(initialData)
+
+const handleChange = (field: keyof FormData, value: unknown) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+}
+```
+
+## Documentation Requirements
+
+### When to Update Documentation
+
+**IMPORTANT**: When making changes to the codebase, documentation must be kept in sync.
+
+#### Update `USER_GUIDE.md` when:
+- Adding new user-facing features
+- Changing UI behavior or workflows
+- Adding new keyboard shortcuts
+- Modifying build/run options
+- Adding new workflow step types
+- Changing project/app management features
+
+#### Update `frontend/src/data/help-content.ts` when:
+- Any change that affects `USER_GUIDE.md` (keep both in sync)
+- The in-app help should mirror the user guide content
+- Add new sections or update existing ones in the `helpSections` array
+- Update keywords for better searchability
+
+#### Update `.cursor/rules/project.mdc` when:
+- Adding new architectural patterns
+- Creating new component patterns or conventions
+- Adding new services or API endpoints
+- Changing coding conventions
+- Adding new workflow step types
+
+### Documentation Files
+
+| File | Purpose | Update Trigger |
+|------|---------|----------------|
+| `USER_GUIDE.md` | End-user documentation | User-facing changes |
+| `frontend/src/data/help-content.ts` | In-app searchable help | User-facing changes |
+| `.cursor/rules/project.mdc` | Developer/AI context | Code patterns, architecture |
+| `README.md` | Project overview, setup | Setup/installation changes |
+
+### Help Content Structure
+
+When adding to `help-content.ts`:
+
+```typescript
+{
+    id: 'section-id',
+    title: 'Section Title',
+    icon: LucideIcon,  // Import from lucide-react
+    keywords: ['search', 'terms', 'for', 'filtering'],
+    content: [
+        { type: 'heading', text: 'Heading' },
+        { type: 'paragraph', text: 'Description text' },
+        { type: 'list', items: ['Item 1', 'Item 2'] },
+        { type: 'table', headers: ['Col1', 'Col2'], rows: [['a', 'b']] },
+        { type: 'code', language: 'bash', text: 'command' },
+        { type: 'tip', text: 'Helpful tip' },
+        { type: 'warning', text: 'Warning message' },
+    ]
+}
+```
+
+### Documentation Checklist
+
+Before completing a feature:
+- [ ] Update `USER_GUIDE.md` if user-facing
+- [ ] Update `help-content.ts` to match user guide
+- [ ] Update cursor rules if new patterns introduced
+- [ ] Verify help dialog search finds new content

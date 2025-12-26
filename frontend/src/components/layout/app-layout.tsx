@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useToast } from '@/components/ui/toast'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Navbar } from './navbar'
-import { ProjectToolbar } from '@/components/project-toolbar'
 import { ProjectList } from '@/components/project-list'
 import { ProjectForm } from '@/components/project-form'
 import { ProjectInfoDialog } from '@/components/project-info-dialog'
@@ -20,10 +19,18 @@ import { useBuild } from '@/hooks/use-build'
 import { useSocket } from '@/hooks/use-socket'
 import { useTheme } from '@/hooks/use-theme'
 import { useStore } from '@/store'
-import { getProjectPlatforms, deleteProject as apiDeleteProject } from '@/services/api'
+import { 
+    getProjectPlatforms, 
+    deleteProject as apiDeleteProject,
+    flutterClean,
+    flutterCleanBatch,
+    removeProjectsBatch,
+    deleteProjectsFoldersBatch,
+} from '@/services/api'
 import type { Project, ProjectFormData, App, AppFormData, Platform, BuildType, BuildOutputType } from '@/types'
 
 type ProjectAction = 'remove' | 'delete'
+type BatchAction = 'clean' | 'remove' | 'delete'
 
 export function AppLayout() {
     const { projectId, appId } = useParams<{ projectId?: string; appId?: string }>()
@@ -53,6 +60,10 @@ export function AppLayout() {
     // Project info dialog state
     const [projectInfoOpen, setProjectInfoOpen] = useState(false)
     const [projectForInfo, setProjectForInfo] = useState<Project | null>(null)
+
+    // Batch action dialog state
+    const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+    const [batchAction, setBatchAction] = useState<BatchAction>('clean')
 
     useSocket()
 
@@ -91,6 +102,17 @@ export function AppLayout() {
         }
     }, [appId, apps, isLoadingApps, selectedProject, selectAppById])
 
+    // Update browser tab title
+    useEffect(() => {
+        let title = 'AppStream'
+        if (selectedApp) {
+            title = `${selectedApp.appName} - AppStream`
+        } else if (selectedProject) {
+            title = `${selectedProject.name} - AppStream`
+        }
+        document.title = title
+    }, [selectedProject, selectedApp])
+
     // Navigate to project URL when selecting
     const handleSelectProject = useCallback(
         (project: Project) => {
@@ -109,16 +131,119 @@ export function AppLayout() {
         [selectedProject, navigate]
     )
 
-    // Clear multi-select when navigating to a project
-    const handleClearSelection = useCallback(() => {
-        setSelectedProjectIds(new Set())
-    }, [])
-
     // Show project info dialog
     const handleShowProjectInfo = useCallback((project: Project) => {
         setProjectForInfo(project)
         setProjectInfoOpen(true)
     }, [])
+
+    // Clean single project
+    const handleCleanProject = useCallback(async (project: Project) => {
+        try {
+            const result = await flutterClean(project.id)
+            if (result.status === 'success') {
+                addToast(`Cleaned ${project.name} successfully`, 'success')
+            } else {
+                addToast(result.message || 'Clean failed', 'error')
+            }
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : 'Clean failed', 'error')
+        }
+    }, [addToast])
+
+    // Batch operations
+    const handleCleanSelected = useCallback(() => {
+        if (selectedProjectIds.size === 0) return
+        setBatchAction('clean')
+        setBatchDialogOpen(true)
+    }, [selectedProjectIds.size])
+
+    const handleRemoveSelected = useCallback(() => {
+        if (selectedProjectIds.size === 0) return
+        setBatchAction('remove')
+        setBatchDialogOpen(true)
+    }, [selectedProjectIds.size])
+
+    const handleDeleteSelected = useCallback(() => {
+        if (selectedProjectIds.size === 0) return
+        setBatchAction('delete')
+        setBatchDialogOpen(true)
+    }, [selectedProjectIds.size])
+
+    const confirmBatchAction = useCallback(async () => {
+        const projectIds = Array.from(selectedProjectIds)
+        
+        try {
+            if (batchAction === 'clean') {
+                const response = await flutterCleanBatch(projectIds)
+                const successCount = response.results.filter(r => r.status === 'success').length
+                const failCount = response.results.filter(r => r.status === 'error').length
+                
+                if (failCount === 0) {
+                    addToast(`Cleaned ${successCount} projects successfully`, 'success')
+                } else if (successCount === 0) {
+                    addToast(`Failed to clean all ${failCount} projects`, 'error')
+                } else {
+                    addToast(`Cleaned ${successCount} projects, ${failCount} failed`, 'warning')
+                }
+            } else if (batchAction === 'remove') {
+                const response = await removeProjectsBatch(projectIds)
+                const successCount = response.results.filter(r => r.status === 'success').length
+                
+                if (successCount > 0) {
+                    addToast(`Removed ${successCount} projects from workspace`, 'success')
+                    await loadProjects()
+                    navigate('/')
+                }
+            } else if (batchAction === 'delete') {
+                const response = await deleteProjectsFoldersBatch(projectIds)
+                const successCount = response.results.filter(r => r.status === 'success').length
+                
+                if (successCount > 0) {
+                    addToast(`Deleted ${successCount} projects from disk`, 'success')
+                    await loadProjects()
+                    navigate('/')
+                }
+            }
+            
+            setSelectedProjectIds(new Set())
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : 'Batch operation failed', 'error')
+        }
+    }, [selectedProjectIds, batchAction, addToast, loadProjects, navigate])
+
+    const getBatchDialogContent = useCallback(() => {
+        const count = selectedProjectIds.size
+        const projectNames = projects
+            .filter(p => selectedProjectIds.has(p.id))
+            .map(p => p.name)
+            .slice(0, 3)
+            .join(', ')
+        const moreCount = count - 3
+
+        if (batchAction === 'clean') {
+            return {
+                title: `Clean ${count} Projects`,
+                description: `Run flutter clean on ${projectNames}${moreCount > 0 ? ` and ${moreCount} more` : ''}?`,
+                confirmLabel: 'Clean',
+                requireConfirmation: undefined,
+            }
+        } else if (batchAction === 'remove') {
+            return {
+                title: `Remove ${count} Projects`,
+                description: `Remove ${projectNames}${moreCount > 0 ? ` and ${moreCount} more` : ''} from workspace? The project folders will remain on disk.`,
+                confirmLabel: 'Remove',
+                requireConfirmation: undefined,
+            }
+        } else {
+            return {
+                title: `Delete ${count} Projects`,
+                description: `Permanently delete ${projectNames}${moreCount > 0 ? ` and ${moreCount} more` : ''} from disk? This action cannot be undone.`,
+                confirmLabel: 'Delete',
+                requireConfirmation: 'DELETE',
+            }
+        }
+    }, [selectedProjectIds, batchAction, projects])
 
     // Project handlers
     const handleAddProject = useCallback(() => {
@@ -298,14 +423,6 @@ export function AppLayout() {
         <SidebarProvider>
             <div className="h-screen flex flex-col overflow-hidden bg-background">
                 <Navbar isDark={isDark} onToggleTheme={toggleTheme} />
-                
-                {/* Project Toolbar - Shows when project is selected or multi-select mode */}
-                <ProjectToolbar 
-                    project={selectedProject} 
-                    selectedProjectIds={selectedProjectIds}
-                    projects={projects}
-                    onClearSelection={handleClearSelection}
-                />
 
                 {/* Main Content - Flex Layout with Sidebar */}
                 <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -323,6 +440,10 @@ export function AppLayout() {
                             onDeleteProject={handleDeleteProject}
                             onSelectionChange={setSelectedProjectIds}
                             onShowInfo={handleShowProjectInfo}
+                            onClean={handleCleanProject}
+                            onCleanSelected={handleCleanSelected}
+                            onRemoveSelected={handleRemoveSelected}
+                            onDeleteSelected={handleDeleteSelected}
                         />
 
                         {/* Apps Section - Only shown when project is selected */}
@@ -419,6 +540,19 @@ export function AppLayout() {
                         project={projectForInfo}
                     />
                 )}
+
+                {/* Batch Action Confirmation Dialog */}
+                <ConfirmDialog
+                    open={batchDialogOpen}
+                    onOpenChange={setBatchDialogOpen}
+                    title={getBatchDialogContent().title}
+                    description={getBatchDialogContent().description}
+                    confirmLabel={getBatchDialogContent().confirmLabel}
+                    cancelLabel="Cancel"
+                    variant={batchAction === 'delete' ? 'destructive' : 'default'}
+                    onConfirm={confirmBatchAction}
+                    requireConfirmation={getBatchDialogContent().requireConfirmation}
+                />
             </div>
         </SidebarProvider>
     )

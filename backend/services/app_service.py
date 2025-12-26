@@ -3,8 +3,8 @@ AppService - Handles app CRUD operations scoped by project.
 """
 
 import json
-import re
 import shutil
+import uuid
 from datetime import datetime
 
 
@@ -69,14 +69,14 @@ class AppService:
         if not app_name:
             raise ValueError("App name is required")
         
-        # Convert app name to a valid ID
-        app_id = app_name.lower().replace(' ', '_').replace('-', '_')
-        app_id = re.sub(r'[^a-z0-9_]', '', app_id)
+        # Generate unique ID (like project IDs)
+        app_id = uuid.uuid4().hex[:8]
         
         apps = self._get_apps(project_id)
         
-        if app_id in apps:
-            raise ValueError(f"App '{app_name}' already exists in this project")
+        # Ensure unique ID (very unlikely collision, but check anyway)
+        while app_id in apps:
+            app_id = uuid.uuid4().hex[:8]
         
         app_data['id'] = app_id
         app_data['project_id'] = project_id
@@ -143,27 +143,7 @@ class AppService:
         if app_id not in apps:
             return False
         
-        new_app_name = app_data.get('appName', app_data.get('name', '')).strip()
-        
-        if new_app_name:
-            new_app_id = new_app_name.lower().replace(' ', '_').replace('-', '_')
-            new_app_id = re.sub(r'[^a-z0-9_]', '', new_app_id)
-            
-            if new_app_id != app_id and new_app_id in apps:
-                raise ValueError(f"App '{new_app_name}' already exists in this project")
-            
-            # Handle directory rename if app name changed
-            if new_app_id != app_id:
-                old_app_dir = self._get_apps_dir(project_id) / app_id
-                new_app_dir = self._get_apps_dir(project_id) / new_app_id
-                
-                if old_app_dir.exists():
-                    old_app_dir.rename(new_app_dir)
-                
-                del apps[app_id]
-                app_id = new_app_id
-        
-        # Merge with existing data
+        # Merge with existing data (app_id stays the same regardless of name change)
         existing_data = apps.get(app_id, {})
         merged_data = {**existing_data, **app_data}
         merged_data['id'] = app_id

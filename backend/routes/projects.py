@@ -109,6 +109,56 @@ def delete_project(project_id):
     return jsonify({"message": message})
 
 
+@bp.route('/batch', methods=['DELETE'])
+def delete_projects_batch():
+    """Delete multiple projects at once.
+    
+    Request Body:
+        project_ids: Array of project IDs to delete
+        delete_folder: If true, also delete project folders from disk
+    """
+    try:
+        service = get_project_service()
+        data = request.json or {}
+        project_ids = data.get('project_ids', [])
+        delete_folder = data.get('delete_folder', False)
+        
+        if not project_ids or not isinstance(project_ids, list):
+            return jsonify({"error": "project_ids array is required"}), 400
+        
+        results = []
+        for project_id in project_ids:
+            project = service.get(project_id)
+            project_name = project.get('name', project_id) if project else project_id
+            
+            try:
+                if service.delete(project_id, delete_project_folder=delete_folder):
+                    results.append({
+                        "project_id": project_id,
+                        "project_name": project_name,
+                        "status": "success",
+                        "message": "Project deleted" if delete_folder else "Project removed"
+                    })
+                else:
+                    results.append({
+                        "project_id": project_id,
+                        "project_name": project_name,
+                        "status": "error",
+                        "message": "Project not found"
+                    })
+            except Exception as e:
+                results.append({
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "status": "error",
+                    "message": str(e)
+                })
+        
+        return jsonify({"results": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route('/<project_id>/platforms', methods=['GET'])
 def get_project_platforms(project_id):
     """
