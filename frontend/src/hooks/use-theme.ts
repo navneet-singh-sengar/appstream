@@ -1,44 +1,42 @@
 import { useState, useCallback, useEffect } from 'react'
-
-type Theme = 'light' | 'dark'
+import { type ThemeId, themes, getTheme } from '@/lib/themes'
 
 export function useTheme() {
-    const [theme, setTheme] = useState<Theme>(() => {
+    const [themeId, setThemeId] = useState<ThemeId>(() => {
         // Check for saved preference or system preference
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('theme') as Theme | null
-            if (saved) return saved
+            const saved = localStorage.getItem('theme') as ThemeId | null
+            if (saved && themes.some(t => t.id === saved)) return saved
             return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         }
         return 'light'
     })
 
-    const isDark = theme === 'dark'
+    const theme = getTheme(themeId)
+    const isDark = theme.isDark
 
     useEffect(() => {
-        // Apply theme class to document
-        if (isDark) {
-            document.documentElement.classList.add('dark')
-        } else {
-            document.documentElement.classList.remove('dark')
-        }
-        // Save preference
-        localStorage.setItem('theme', theme)
-    }, [theme, isDark])
+        // Set the data-theme attribute on the document element
+        document.documentElement.setAttribute('data-theme', themeId)
 
-    const toggleTheme = useCallback(() => {
-        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+        // Save preference
+        localStorage.setItem('theme', themeId)
+    }, [themeId])
+
+    const setTheme = useCallback((id: ThemeId) => {
+        setThemeId(id)
     }, [])
 
-    const setLightTheme = useCallback(() => setTheme('light'), [])
-    const setDarkTheme = useCallback(() => setTheme('dark'), [])
+    const toggleTheme = useCallback(() => {
+        setThemeId((prev) => (prev === 'light' ? 'dark' : 'light'))
+    }, [])
 
     return {
         theme,
+        themeId,
         isDark,
+        setTheme,
         toggleTheme,
-        setLightTheme,
-        setDarkTheme,
+        availableThemes: themes,
     }
 }
-

@@ -19,8 +19,8 @@ import { useBuild } from '@/hooks/use-build'
 import { useSocket } from '@/hooks/use-socket'
 import { useTheme } from '@/hooks/use-theme'
 import { useStore } from '@/store'
-import { 
-    getProjectPlatforms, 
+import {
+    getProjectPlatforms,
     deleteProject as apiDeleteProject,
     flutterClean,
     flutterCleanBatch,
@@ -36,7 +36,7 @@ export function AppLayout() {
     const { projectId, appId } = useParams<{ projectId?: string; appId?: string }>()
     const navigate = useNavigate()
     const { addToast } = useToast()
-    const { isDark, toggleTheme } = useTheme()
+    const { themeId, setTheme, availableThemes } = useTheme()
 
     // Project form state
     const [projectFormOpen, setProjectFormOpen] = useState(false)
@@ -172,13 +172,13 @@ export function AppLayout() {
 
     const confirmBatchAction = useCallback(async () => {
         const projectIds = Array.from(selectedProjectIds)
-        
+
         try {
             if (batchAction === 'clean') {
                 const response = await flutterCleanBatch(projectIds)
                 const successCount = response.results.filter(r => r.status === 'success').length
                 const failCount = response.results.filter(r => r.status === 'error').length
-                
+
                 if (failCount === 0) {
                     addToast(`Cleaned ${successCount} projects successfully`, 'success')
                 } else if (successCount === 0) {
@@ -189,7 +189,7 @@ export function AppLayout() {
             } else if (batchAction === 'remove') {
                 const response = await removeProjectsBatch(projectIds)
                 const successCount = response.results.filter(r => r.status === 'success').length
-                
+
                 if (successCount > 0) {
                     addToast(`Removed ${successCount} projects from workspace`, 'success')
                     await loadProjects()
@@ -198,14 +198,14 @@ export function AppLayout() {
             } else if (batchAction === 'delete') {
                 const response = await deleteProjectsFoldersBatch(projectIds)
                 const successCount = response.results.filter(r => r.status === 'success').length
-                
+
                 if (successCount > 0) {
                     addToast(`Deleted ${successCount} projects from disk`, 'success')
                     await loadProjects()
                     navigate('/')
                 }
             }
-            
+
             setSelectedProjectIds(new Set())
         } catch (error) {
             addToast(error instanceof Error ? error.message : 'Batch operation failed', 'error')
@@ -273,7 +273,7 @@ export function AppLayout() {
             await apiDeleteProject(projectToAction.id, deleteFolder)
             await loadProjects()
             navigate('/')
-            
+
             if (deleteFolder) {
                 addToast('Project deleted from disk', 'success')
             } else {
@@ -422,7 +422,7 @@ export function AppLayout() {
     return (
         <SidebarProvider>
             <div className="h-screen flex flex-col overflow-hidden bg-background">
-                <Navbar isDark={isDark} onToggleTheme={toggleTheme} />
+                <Navbar themeId={themeId} availableThemes={availableThemes} onSetTheme={setTheme} />
 
                 {/* Main Content - Flex Layout with Sidebar */}
                 <div className="flex-1 min-h-0 flex overflow-hidden">

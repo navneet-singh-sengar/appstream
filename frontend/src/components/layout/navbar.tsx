@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Sun, Moon, HelpCircle } from 'lucide-react'
+import { Palette, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { SystemInfoDialog } from '@/components/system-info-dialog'
 import { HelpDialog } from '@/components/help-dialog'
+import { ThemeDialog } from '@/components/theme-dialog'
+import type { ThemeId, Theme } from '@/lib/themes'
 
 interface NavbarProps {
-    isDark: boolean
-    onToggleTheme: () => void
+    themeId: ThemeId
+    availableThemes: Theme[]
+    onSetTheme: (id: ThemeId) => void
 }
 
 function AppStreamIcon({ className }: { className?: string }) {
@@ -29,8 +32,9 @@ function AppStreamIcon({ className }: { className?: string }) {
     )
 }
 
-export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
+export function Navbar({ themeId, availableThemes, onSetTheme }: NavbarProps) {
     const [helpOpen, setHelpOpen] = useState(false)
+    const [themeOpen, setThemeOpen] = useState(false)
 
     // Global keyboard shortcut for help
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -68,14 +72,30 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
                             </Tooltip>
                         </TooltipProvider>
                         <SystemInfoDialog />
-                        <Button variant="ghost" size="icon" onClick={onToggleTheme}>
-                            {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-                        </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" onClick={() => setThemeOpen(true)}>
+                                        <Palette className="h-5 w-5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Theme</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </div>
                 </div>
             </nav>
 
             <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+            <ThemeDialog
+                open={themeOpen}
+                onOpenChange={setThemeOpen}
+                themeId={themeId}
+                availableThemes={availableThemes}
+                onSetTheme={onSetTheme}
+            />
         </>
     )
 }
